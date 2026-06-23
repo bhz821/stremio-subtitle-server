@@ -1,0 +1,10 @@
+{
+  "name": "stremio-local-subs",
+  "version": "1.0.0",
+  "description": "Stremio 本地字幕插件 — 从 ~/.stremio-subs/ 加载 .srt 字幕",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "private": true
+}
