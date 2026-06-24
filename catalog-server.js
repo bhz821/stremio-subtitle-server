@@ -199,6 +199,31 @@ async function doubanFetchRecentHot(mediaType, category, subType, limit = 20, ck
 }
 
 // ===========================================================================
+//  豆瓣详情 API（拿英文名 original_title）
+// ===========================================================================
+async function doubanFetchSubject(doubanId) {
+  const ck = `dbs_${doubanId}`;
+  const hit = cacheGet('imdb', ck, TTL.imdb);
+  if (hit && typeof hit === 'object') return hit;
+  try {
+    const d = await new Promise((ok, no) => {
+      const req = https.get({
+        hostname: 'm.douban.com',
+        path: `/rexxar/api/v2/tv/${doubanId}`,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36', 'Accept': 'application/json', 'Referer': 'https://m.douban.com/' },
+      }, (res) => {
+        let b = ''; res.on('data', c => b += c); res.on('end', () => { try { ok(JSON.parse(b)); } catch (e) { no(e); } });
+      });
+      req.on('error', no);
+      req.setTimeout(6000, () => { req.destroy(); no(new Error('超时')); });
+    });
+    const result = { originalTitle: d.original_title || null, aka: d.aka || [] };
+    cacheSet('imdb', ck, result);
+    return result;
+  } catch (e) { return null; }
+}
+
+// ===========================================================================
 //  TVmaze API（TMDB 没 IMDB 时用英文名补查）
 // ===========================================================================
 async function tvmazeSearch(query) {
@@ -221,7 +246,7 @@ async function tvmazeSearch(query) {
 // ===========================================================================
 //  IMDB 搜索（中文标题 → TMDB 找英文名 → TVmaze 补 IMDB ID）
 // ===========================================================================
-async function searchImdbByTitle(title, year, tmdbType) {
+async function searchImdbByTitle(title, year, tmdbType, doubanId) {
   const ck = `srch_${tmdbType}_${title}_${year || ''}`;
   const hit = cacheGet('imdb', ck, TTL.imdb);
   if (hit !== null) return hit;
@@ -241,6 +266,35 @@ async function searchImdbByTitle(title, year, tmdbType) {
       data = await tmdbFetch(`/search/${tmdbType}?${params2.toString()}`);
       results = data.results || [];
     }
+
+    // ── 中文搜不到 → 拿豆瓣英文名再试 ──
+    if (!results.length && doubanId) {
+      const subj = await doubanFetchSubject(doubanId);
+      if (subj?.originalTitle) {
+        // 用英文名搜 TMDB
+        const enQuery = subj.originalTitle.replace(/Season\s*\d+/i, '').trim();
+        data = await tmdbFetch(`/search/${tmdbType}?query=${encodeURIComponent(enQuery)}&language=en`);
+        results = data.results || [];
+        // 如果英文名搜 TMDB 也没结果，用影视名搜 TVmaze 直接拿 IMDB
+        if (!results.length) {
+          const imdbId = await tvmazeSearch(enQuery);
+          if (imdbId) {
+            const result = { imdbId, poster: null, bg: null, tmdbId: null, desc: null };
+            cacheSet('imdb', ck, result);
+            return result;
+          }
+        }
+        // 也试试 aka（TMDB 的备选中文名）
+        if (!results.length && subj.aka?.length) {
+          for (const aka of subj.aka) {
+            data = await tmdbFetch(`/search/${tmdbType}?query=${encodeURIComponent(aka)}&language=zh-CN`);
+            results = data.results || [];
+            if (results.length) break;
+          }
+        }
+      }
+    }
+
     if (!results.length) { cacheSet('imdb', ck, null); return null; }
 
     const best = results[0];
@@ -252,7 +306,7 @@ async function searchImdbByTitle(title, year, tmdbType) {
       imdbId = await tvmazeSearch(enName);
     }
 
-    cacheSet('imdb', ck, imdbId);
+    cacheSet('imdb', ck, { imdbId, poster: best.poster_path ? `https://image.tmdb.org/t/p/w342${best.poster_path}` : null, bg: best.backdrop_path ? `https://image.tmdb.org/t/p/w1280${best.backdrop_path}` : null, tmdbId: best.id, desc: best.overview?.slice(0, 400) });
     return {
       imdbId,
       poster: best.poster_path ? `https://image.tmdb.org/t/p/w342${best.poster_path}` : null,
@@ -278,7 +332,7 @@ async function buildExploreCatalog(type, tag, tmdbSearchType, limit) {
   const metas = [];
   for (let i = 0; i < Math.min(subjects.length, limit); i += 3) {
     const batch = subjects.slice(i, i + 3);
-    const results = await Promise.allSettled(batch.map(s => searchImdbByTitle(s.title, s.year, tmdbSearchType)));
+    const results = await Promise.allSettled(batch.map(s => searchImdbByTitle(s.title, s.year, tmdbSearchType, s.id)));
     for (let j = 0; j < batch.length; j++) {
       const s = batch[j];
       const r = results[j].status === 'fulfilled' ? results[j].value : null;
@@ -325,7 +379,7 @@ async function buildRexxarCatalog(collectionId, type, tmdbSearchType, limit, reg
   for (let i = 0; i < slice.length; i += 3) {
     const batch = slice.slice(i, i + 3);
     const results = await Promise.allSettled(
-      batch.map(item => searchImdbByTitle(item.title, (item.card_subtitle || '').split(' / ')[0], tmdbSearchType))
+      batch.map(item => searchImdbByTitle(item.title, (item.card_subtitle || '').split(' / ')[0], tmdbSearchType, item.id))
     );
     for (let j = 0; j < batch.length; j++) {
       const item = batch[j];
@@ -369,7 +423,7 @@ async function buildRecentHotCatalog(mediaType, category, subType, stremioType, 
   for (let i = 0; i < items.length; i += 3) {
     const batch = items.slice(i, i + 3);
     const results = await Promise.allSettled(
-      batch.map(item => searchImdbByTitle(item.title, (item.card_subtitle || '').split(' / ')[0], stremioType === 'movie' ? 'movie' : 'tv'))
+      batch.map(item => searchImdbByTitle(item.title, (item.card_subtitle || '').split(' / ')[0], stremioType === 'movie' ? 'movie' : 'tv', item.id))
     );
     for (let j = 0; j < batch.length; j++) {
       const item = batch[j];
