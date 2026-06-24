@@ -64,14 +64,15 @@ function findSubsByKeyword(keyword) {
   );
 }
 
-/** 猜测字幕语言 — 返回 ISO 639-2/B 三字母代码 */
+/** 猜测字幕语言 */
 function guessLang(filename) {
   const lower = filename.toLowerCase();
-  if (/chi|zho|zh|chs|cht|chinese|简体|繁体|中文/i.test(lower)) return 'chi';
-  if (/eng|en|english/i.test(lower)) return 'eng';
-  if (/jpn|ja|japanese|日本語/i.test(lower)) return 'jpn';
-  if (/kor|ko|korean|한국어/i.test(lower)) return 'kor';
-  return 'chi'; // 默认中文
+  if (/chi|zho|zh|chs|cht|chinese|简体|繁体|中文/i.test(lower)) return 'Chinese';
+  if (/eng|en|english/i.test(lower)) return 'English';
+  if (/jpn|ja|japanese|日本語/i.test(lower)) return 'Japanese';
+  if (/kor|ko|korean|한국어/i.test(lower)) return 'Korean';
+  // 文件名不含语言标记时，从目录推断
+  return 'Chinese'; // 默认中文不瞎猜
 }
 
 // ======================== HTTP 服务器 ========================
@@ -100,7 +101,7 @@ const server = http.createServer((req, res) => {
     if (pathname === '/manifest.json' || pathname === '/addon.json') {
       const manifest = {
         id: 'com.vickiepo.local-subs',
-        version: '1.0.0',
+        version: '1.0.1',
         name: '📁 本地字幕',
         description: '从 iMac ~/.stremio-subs/ 加载本地 .srt 字幕文件',
         logo: '',
@@ -218,13 +219,11 @@ const server = http.createServer((req, res) => {
       const subtitles = matchingFiles.map((fp, i) => {
         const fname = path.basename(fp);
         const relPath = path.relative(SUBS_DIR, fp);
-        const ext = path.extname(fp).slice(1).toLowerCase();
+        const encodedUrl = `http://${LAN_IP}:${PORT}/subs/${relPath.split(path.sep).map(s => encodeURIComponent(s)).join('/')}`;
         return {
-          id: `local-sub-${i}`,
-          url: `http://${LAN_IP}:${PORT}/subs/${relPath.split(path.sep).join('/')}`,
+          id: `sub-${i}`,
+          url: encodedUrl,
           lang: guessLang(fname),
-          // Stremio 1.10.x core 的 Subtitles struct 只有 id/lang/url
-          // format 字段会导致整个条目被静默丢弃
         };
       });
 
@@ -245,9 +244,10 @@ const server = http.createServer((req, res) => {
       if (fs.existsSync(safePath) && fs.statSync(safePath).isFile()) {
         const ext = path.extname(safePath).toLowerCase();
         const mimeMap = { '.srt': 'text/plain; charset=utf-8', '.ass': 'text/plain; charset=utf-8', '.ssa': 'text/plain; charset=utf-8' };
+        const encodedName = encodeURIComponent(path.basename(safePath));
         res.writeHead(200, {
           'Content-Type': mimeMap[ext] || 'application/octet-stream',
-          'Content-Disposition': `inline; filename="${path.basename(safePath)}"`,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodedName}`,
           'Cache-Control': 'no-cache'
         });
         return fs.createReadStream(safePath).pipe(res);
