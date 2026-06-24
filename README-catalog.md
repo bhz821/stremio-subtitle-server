@@ -68,6 +68,14 @@ launchctl bootout gui/$(id -u)/com.vickiepo.stremio-catalog 2>/dev/null
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vickiepo.stremio-catalog.plist
 ```
 
+## Torrentio 直连说明
+
+Torrentio（torrentio.strem.fun）需 R3G nftables 放行规则才能绕过 CF 隧道。详见 R3G 运维手册 §12.18。
+
+**如果 Torrentio 播放失败**：
+1. 检查是否 CF IP 变了：`dig torrentio.strem.fun +short`
+2. SSH 上 R3G 更新 nftables 放行规则
+
 ## 依赖
 
 - TMDB API Key（免费注册：[themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)）

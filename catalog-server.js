@@ -176,10 +176,11 @@ async function doubanFetchRexxar(collectionId, limit = 20) {
 // ===========================================================================
 //  豆瓣 API — Recent Hot（电影/综艺用，豆瓣首页同款）
 // ===========================================================================
-async function doubanFetchRecentHot(mediaType, category, subType, limit = 20) {
+async function doubanFetchRecentHot(mediaType, category, subType, limit = 20, ck = '') {
   let path = `/rexxar/api/v2/subject/recent_hot/${mediaType}?start=0&limit=${limit}`;
-  if (category) path += `&category=${category}`;
-  if (subType)  path += `&type=${subType}`;
+  if (category) path += `&category=${encodeURIComponent(category)}`;
+  if (subType)  path += `&type=${encodeURIComponent(subType)}`;
+  if (ck)       path += `&ck=${ck}`;
   return new Promise((resolve, reject) => {
     const req = https.get({
       hostname: 'm.douban.com',
@@ -355,12 +356,12 @@ async function buildRexxarCatalog(collectionId, type, tmdbSearchType, limit, reg
 }
 
 /** 从豆瓣 Recent Hot 接口构建（电影综合、综艺用） */
-async function buildRecentHotCatalog(mediaType, category, subType, stremioType, limit) {
-  const ck = `hot_${mediaType}_${category || ''}_${subType || ''}`;
-  const cached = cacheGet('catalogs', ck, TTL.catalog);
+async function buildRecentHotCatalog(mediaType, category, subType, stremioType, limit, ckToken = '') {
+  const key = `hot_${mediaType}_${category || ''}_${subType || ''}`;
+  const cached = cacheGet('catalogs', key, TTL.catalog);
   if (cached) return cached;
 
-  const d = await doubanFetchRecentHot(mediaType, category, subType, limit);
+  const d = await doubanFetchRecentHot(mediaType, category, subType, limit, ckToken);
   const items = d.items || [];
   if (!items.length) return { metas: [] };
 
@@ -393,20 +394,20 @@ async function buildRecentHotCatalog(mediaType, category, subType, stremioType, 
     }
   }
   const result = { metas };
-  cacheSet('catalogs', ck, result);
+  cacheSet('catalogs', key, result);
   return result;
 }
 
 // ===========================================================================
-//  榜单定义（13 个）
+//  榜单定义（14 个）
 // ===========================================================================
 const CATALOG_DEFS = [
-  // ── 电影（综合用 Recent Hot，地区用 explore 标签）──
+  // ── 电影（综合用 Recent Hot，地区用豆瓣官方分类）──
   { type: 'movie',  id: 'movie_hot',    name: '🎬 热门电影（综合）', build: () => buildRecentHotCatalog('movie', null, null, 'movie', 20) },
-  { type: 'movie',  id: 'cn_movies',    name: '🇨🇳 华语热片',       build: () => buildExploreCatalog('movie',  '华语',     'movie', 15) },
-  { type: 'movie',  id: 'kr_movies',    name: '🇰🇷 韩国热片',       build: () => buildExploreCatalog('movie',  '韩国电影', 'movie', 15) },
-  { type: 'movie',  id: 'jp_movies',    name: '🇯🇵 日本热片',       build: () => buildExploreCatalog('movie',  '日本电影', 'movie', 15) },
-  { type: 'movie',  id: 'doc_movies',   name: '📽️ 纪录片（电影）',  build: () => buildExploreCatalog('movie', '纪录片',   'movie', 15) },
+  { type: 'movie',  id: 'cn_movies',    name: '🇨🇳 华语热片',       build: () => buildRecentHotCatalog('movie', '热门', '华语', 'movie', 20, 'Btbl') },
+  { type: 'movie',  id: 'kr_movies',    name: '🇰🇷 韩国热片',       build: () => buildRecentHotCatalog('movie', '热门', '韩国', 'movie', 20, 'Btbl') },
+  { type: 'movie',  id: 'jp_movies',    name: '🇯🇵 日本热片',       build: () => buildRecentHotCatalog('movie', '热门', '日本', 'movie', 20, 'Btbl') },
+  { type: 'movie',  id: 'doc_movies',   name: '📽️ 纪录片（电影）',  build: () => buildExploreCatalog('movie', '纪录片',  'movie', 15) },
 
   // ── 剧集（豆瓣 Recent Hot 官方分类）──
   { type: 'series', id: 'tv_hot',       name: '📺 热门剧集（综合）', build: () => buildRecentHotCatalog('tv', 'tv',    null,             'series', 20) },
