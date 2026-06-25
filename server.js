@@ -101,14 +101,14 @@ const server = http.createServer((req, res) => {
     if (pathname === '/manifest.json' || pathname === '/addon.json') {
       const manifest = {
         id: 'com.vickiepo.local-subs',
-        version: '1.0.1',
+        version: '1.4.0',
         name: '📁 本地字幕',
         description: '从 iMac ~/.stremio-subs/ 加载本地 .srt 字幕文件',
         logo: '',
         background: '',
         resources: ['subtitles'],
         types: ['movie', 'series'],
-        idPrefixes: ['tt'],
+        idPrefixes: ['tt', 'smb_'],
         catalogs: [],
         behaviorHints: {
           configurable: false,
@@ -167,7 +167,35 @@ const server = http.createServer((req, res) => {
       const extra = subMatch[3] || '';
 
       // 解码 mediaId (可能含 %3A 即 ":")
-      const decodedId = decodeURIComponent(mediaId);
+      let decodedId = decodeURIComponent(mediaId);
+
+      // smb_<base64> → 从 TMDB 缓存查 IMDB ID
+      if (decodedId.startsWith('smb_')) {
+        try {
+          const cachePath = path.join(os.homedir(), '.smb-tmdb-cache.json');
+          if (fs.existsSync(cachePath)) {
+            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+            const b64 = decodedId.slice(4);
+            for (const [relPath, meta] of Object.entries(cache)) {
+              if (meta && meta.imdbId) {
+                const encoded = Buffer.from(relPath, 'utf-8').toString('base64url');
+                if (encoded === b64) {
+                  decodedId = meta.imdbId;
+                  log(`  ↪ smb → tt: ${meta.imdbId} (${meta.title})`);
+                  // 顺便取出季集号，后面字幕匹配用
+                  if (meta.season != null && meta.episode != null) {
+                    decodedId += `:${meta.season}:${meta.episode}`;
+                    log(`  ↪ 附加季集: S${meta.season}E${meta.episode}`);
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          log(`  ⚠ smb 转 tt 失败: ${e.message}`);
+        }
+      }
 
       let season = null;
       let episode = null;
@@ -201,19 +229,43 @@ const server = http.createServer((req, res) => {
       if (season == null && parsed.query.season) season = parseInt(parsed.query.season);
       if (episode == null && parsed.query.episode) episode = parseInt(parsed.query.episode);
 
+      // 5) movie 类型的 tt ID → 查 TMDB 缓存是否有季集号
+      if (season == null && mediaType === 'movie' && /^tt\d+$/i.test(decodedId)) {
+        try {
+          const cachePath = path.join(os.homedir(), '.smb-tmdb-cache.json');
+          if (fs.existsSync(cachePath)) {
+            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+            for (const [, meta] of Object.entries(cache)) {
+              if (meta && meta.imdbId && meta.imdbId.toLowerCase() === decodedId.toLowerCase()) {
+                if (meta.season != null && meta.episode != null) {
+                  season = meta.season;
+                  episode = meta.episode;
+                  log(`  ↪ 从 TMDB 缓存找到季集: S${season}E${episode}`);
+                  break;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          log(`  ⚠ TMDB 缓存查询失败: ${e.message}`);
+        }
+      }
+
       let matchingFiles = [];
 
       if (season != null && episode != null) {
         matchingFiles = findSubsByEpisode(season, episode);
-      } else if (mediaType === 'movie') {
-        const moviesDir = path.join(SUBS_DIR, 'Movies');
-        matchingFiles = scanSubFiles(moviesDir);
-        if (matchingFiles.length === 0) {
-          matchingFiles = findSubsByKeyword(decodedId.replace(/:.*$/, ''));
-        }
       } else {
-        // 没季/集号时: 试 SxxExx 全扫，或用 imdb id 模糊
+        // 无论 movie/series，全目录搜索
         matchingFiles = scanSubFiles(SUBS_DIR);
+        // 如果有 SxxExx 可以进一步缩小范围
+        const seInName = decodedId.match(/S(\d{2})E(\d{2})/i);
+        if (seInName) {
+          const seStr = 'S' + seInName[1] + 'E' + seInName[2];
+          matchingFiles = matchingFiles.filter(f =>
+            path.basename(f).toUpperCase().includes(seStr)
+          );
+        }
       }
 
       const subtitles = matchingFiles.map((fp, i) => {
