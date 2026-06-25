@@ -126,7 +126,10 @@ const MANIFEST = {
   resources: ['catalog', 'stream', 'meta', 'subtitles'],
   types: ['movie', 'series'],
   idPrefixes: ['smb_', 'tt'],
-  catalogs: [{ type: 'movie', id: 'smb-local', name: '📁 SMB 本地', extra: [{ name: 'search', isRequired: false }] }],
+  catalogs: [
+    { type: 'movie', id: 'smb-local', name: '📁 SMB 本地 · 电影', extra: [{ name: 'search', isRequired: false }] },
+    { type: 'series', id: 'smb-local', name: '📁 SMB 本地 · 剧集', extra: [{ name: 'search', isRequired: false }] },
+  ],
   behaviorHints: { configurable: false, configurationRequired: false },
 };
 
@@ -137,6 +140,12 @@ function define(name, fn) { handlers[name] = fn; }
 
 define('catalog', async (args) => {
   let files = getFiles();
+  // 按请求的类型过滤（movie 或 series）
+  if (args.type === 'series') {
+    files = files.filter(f => f.se);
+  } else {
+    files = files.filter(f => !f.se);
+  }
   if (args.extra.search) {
     const q = args.extra.search.toLowerCase();
     files = files.filter(f => f.name.toLowerCase().includes(q));

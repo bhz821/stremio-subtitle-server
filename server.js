@@ -26,6 +26,43 @@ const PORT = 5800;
 const HOST = '0.0.0.0';
 const LAN_IP = '192.168.2.231';
 
+// 数字 ID → 文件路径 映射表
+let subIdCounter = 1;
+const subIdMap = {};
+
+/** 简易 ASS → SRT 转换 */
+function assToSrt(content) {
+  const lines = content.split('\n');
+  const events = [];
+  let formatFields = [], inEvents = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith('Format:')) formatFields = line.slice(7).split(',').map(f => f.trim());
+    if (line.startsWith('[Events]')) { inEvents = true; continue; }
+    if (inEvents && line.startsWith('Dialogue:')) {
+      const parts = line.slice(9).split(',');
+      if (formatFields.length && parts.length >= formatFields.length) {
+        const startStr = parts[formatFields.indexOf('Start')] || '';
+        const endStr = parts[formatFields.indexOf('End')] || '';
+        let text = parts.slice(formatFields.indexOf('Text')).join(',').replace(/\{[^}]*\}/g, '').replace(/\\N/gi, '\n').trim();
+        if (!text) continue;
+        const s = parseAssTime(startStr), e = parseAssTime(endStr);
+        events.push({ s, e, text });
+      }
+    }
+  }
+  events.sort((a, b) => a.s - b.s);
+  return events.map((ev, i) => `${i+1}\n${fmtSrtTime(ev.s)} --> ${fmtSrtTime(ev.e)}\n${ev.text}\n`).join('\n');
+}
+function parseAssTime(t) {
+  const m = t.match(/(\d+):(\d+):(\d+)\.(\d+)/);
+  return m ? (+m[1]*3600)+(+m[2]*60)+(+m[3])+(+m[4]/100) : 0;
+}
+function fmtSrtTime(sec) {
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.floor(sec%60), ms = Math.round((sec%1)*1000);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`;
+}
+
 // ======================== 文件扫描 ========================
 
 /** 递归扫描目录下所有字幕文件 */
@@ -251,14 +288,31 @@ const server = http.createServer((req, res) => {
         }
       }
 
+      // 从 extra 中提取视频文件名 → 剧名（用于字幕过滤）
+      let showFilter = '';
+      const decodedExtra = decodeURIComponent(extra);
+      const fnMatch = decodedExtra.match(/filename=(.+?)(?:\.(?:mkv|mp4|avi|mov|ts|m2ts))(?:\&|$)/i);
+      if (fnMatch) {
+        const basename = path.basename(fnMatch[1], path.extname(fnMatch[1]));
+        // 匹配 S##E## 或 - S##E## -，取前面的部分作为剧名
+        const showPart = basename.split(/[.\s-]+S\d{2}E\d{2}[.\s-]+/i)[0];
+        if (showPart) showFilter = showPart.replace(/[.\s-]+/g, ' ').toLowerCase().trim();
+      }
+
       let matchingFiles = [];
 
       if (season != null && episode != null) {
         matchingFiles = findSubsByEpisode(season, episode);
+        // 用剧名过滤：只保留文件名/路径含剧名的字幕
+        if (showFilter) {
+          const keywords = showFilter.split(' ').filter(k => k.length > 3); // 只保留有意义的词
+          matchingFiles = matchingFiles.filter(fp => {
+            const lower = fp.toLowerCase();
+            return keywords.every(kw => lower.includes(kw));
+          });
+        }
       } else {
-        // 无论 movie/series，全目录搜索
         matchingFiles = scanSubFiles(SUBS_DIR);
-        // 如果有 SxxExx 可以进一步缩小范围
         const seInName = decodedId.match(/S(\d{2})E(\d{2})/i);
         if (seInName) {
           const seStr = 'S' + seInName[1] + 'E' + seInName[2];
@@ -270,11 +324,11 @@ const server = http.createServer((req, res) => {
 
       const subtitles = matchingFiles.map((fp, i) => {
         const fname = path.basename(fp);
-        const relPath = path.relative(SUBS_DIR, fp);
-        const encodedUrl = `http://${LAN_IP}:${PORT}/subs/${relPath.split(path.sep).map(s => encodeURIComponent(s)).join('/')}`;
+        const id = subIdCounter++;
+        subIdMap[id] = fp;
         return {
-          id: `sub-${i}`,
-          url: encodedUrl,
+          id: `sub-${id}`,
+          url: `http://${LAN_IP}:${PORT}/subs/TV/${id}.srt`,
           lang: guessLang(fname),
         };
       });
@@ -282,12 +336,27 @@ const server = http.createServer((req, res) => {
       return serveJSON(res, { subtitles });
     }
 
-    // ---- 路由: 字幕文件静态服务 ----
-    // /subs/TV/filename.srt
+    // /subs/TV/filename.srt  — 旧方式（兼容）
+    // 先检查 ID 映射
+    const tvIdMatch = pathname.match(/^\/subs\/TV\/(\d+)\.srt$/);
+    if (tvIdMatch) {
+      const id = parseInt(tvIdMatch[1], 10);
+      const mappedPath = subIdMap[id];
+      if (mappedPath && fs.existsSync(mappedPath) && fs.statSync(mappedPath).isFile()) {
+        const ext = path.extname(mappedPath).toLowerCase();
+        let content = fs.readFileSync(mappedPath, 'utf-8');
+        // ASS → SRT 转换（Stremio 代理不支持 ASS）
+        if (ext === '.ass' || ext === '.ssa') content = assToSrt(content);
+        res.writeHead(200, {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Length': Buffer.byteLength(content, 'utf-8')
+        });
+        return res.end(content);
+      }
+    }
     const decodedPath = decodeURIComponent(pathname);
     if (decodedPath.startsWith('/subs/')) {
-      const relPath = decodedPath.slice(6); // 去掉 /subs/
-      // 安全校验: 不允许跳出 SUBS_DIR
+      const relPath = decodedPath.slice(6);
       const safePath = path.resolve(path.join(SUBS_DIR, relPath));
       if (!safePath.startsWith(path.resolve(SUBS_DIR))) {
         res.writeHead(403);
@@ -295,12 +364,9 @@ const server = http.createServer((req, res) => {
       }
       if (fs.existsSync(safePath) && fs.statSync(safePath).isFile()) {
         const ext = path.extname(safePath).toLowerCase();
-        const mimeMap = { '.srt': 'text/plain; charset=utf-8', '.ass': 'text/plain; charset=utf-8', '.ssa': 'text/plain; charset=utf-8' };
-        const encodedName = encodeURIComponent(path.basename(safePath));
+        const mimeMap = { '.srt': 'text/plain', '.ass': 'text/plain', '.ssa': 'text/plain' };
         res.writeHead(200, {
-          'Content-Type': mimeMap[ext] || 'application/octet-stream',
-          'Content-Disposition': `inline; filename*=UTF-8''${encodedName}`,
-          'Cache-Control': 'no-cache'
+          'Content-Type': mimeMap[ext] || 'application/octet-stream'
         });
         return fs.createReadStream(safePath).pipe(res);
       }
