@@ -305,8 +305,8 @@ function renderExtractPage() {
     <h2>⚡ Real-Debrid 最近下载</h2>
     <p style="font-size:12px;color:#888;margin-bottom:8px">点你刚才播过的视频，提取内嵌英文字幕并翻译</p>
     <div id="rdList" style="margin-bottom:8px">加载中...</div>
-    <div id="rdTracks" class="tracks"></div>
-    <div id="rdStatus" class="status"></div>
+    <div id="rdTracks" class="tracks" style="display:none"></div>
+    <div id="rdStatus" class="status" style="display:none"></div>
     <button class="btn green" id="rdExtractBtn" style="display:none" onclick="startExtract('rd')">🚀 提取并翻译</button>
     <hr style="border-color:#333;margin:12px 0">
     <div style="font-size:13px;color:#888;margin-bottom:6px">或者从 OpenSubtitles 搜索：</div>
@@ -403,8 +403,7 @@ async function loadRD() {
       var div = document.createElement('div');
       div.className = 'rd-item';
       div.innerHTML = '<span class="rbadge">RD</span><span class="rname">' + (v.filename || '?') + '</span><span class="rsize">' + sz + '</span>';
-      div.addEventListener('click', function() { selectRD(v.download, v.filename); });
-      div.addEventListener('dblclick', function() {
+      div.addEventListener('click', function() {
         var fn = v.filename || '';
         var m = fn.match(/S(\d{2})E(\d{2})/i);
         var q;
@@ -415,7 +414,6 @@ async function loadRD() {
           q = fn.replace(/\.[^/.]+$/, '').replace(/[.\s_]/g, ' ');
         }
         document.getElementById('rdImdbId').value = q;
-        switchTab('rd');
         searchOS();
       });
       el.appendChild(div);
@@ -1071,8 +1069,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // ---- API: OS 翻译 ----
-    if (pathname === '/api/translate-subtitle') {
+if (pathname === '/api/translate-subtitle') {
       var fileParam = parsed.query.file || '';
       if (!fileParam) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file' })); }
       (async function() {
