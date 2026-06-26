@@ -488,7 +488,8 @@ function downloadOS() {
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
     var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
-    var trBtn = '<button class="btn green" onclick="translateOS(\\'' + (d.filename || '') + '\\')" style="margin-top:8px">\uD83C\uDF10 \u7FFB\u8BD1\u4E3A\u53CC\u8BED</button>';
+    window._lastDlFile = d.filename || '';
+    var trBtn = '<button class="btn green" onclick="translateOS(window._lastDlFile)" style="margin-top:8px">🌐 翻译为双语</button>';
     st.innerHTML = dlLink + trBtn;
   }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
@@ -640,6 +641,8 @@ function startExtract(mode) {
     statusEl.className = 'status error';
     statusEl.textContent = '❌ 请求失败: ' + e.message;
   });
+}
+
 }
 
 // 启动自动检测
