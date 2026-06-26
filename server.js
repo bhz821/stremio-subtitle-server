@@ -1145,7 +1145,31 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-if (pathname === '/api/translate-subtitle') {
+    // ---- API: 搜索已有字幕 ----
+    if (pathname === '/api/search-subs') {
+      var q = (parsed.query.q || '').toLowerCase();
+      var files = [];
+      try {
+        var dir = path.join(SUBS_DIR, 'TV');
+        if (fs.existsSync(dir)) {
+          fs.readdirSync(dir).forEach(function(f) {
+            if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt') && f.toLowerCase().includes(q)) {
+              files.push(f);
+            }
+          });
+        }
+        fs.readdirSync(SUBS_DIR).forEach(function(f) {
+          if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt') && f.toLowerCase().includes(q)) {
+            files.push(f);
+          }
+        });
+      } catch {}
+      files.sort();
+      serveJSON(res, { files: files.slice(0, 50) });
+      return;
+    }
+
+    if (pathname === '/api/translate-subtitle') {
       var fileParam = parsed.query.file || '';
       if (!fileParam) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file' })); }
       (async function() {
