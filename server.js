@@ -322,6 +322,18 @@ function renderExtractPage() {
     </div>
   </div>
 
+  <!-- 翻译已有字幕 -->
+  <div class="card" style="margin-top:8px">
+    <h2>🌐 翻译已有英文字幕</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:6px">搜索字幕库里已有的 .srt 文件，选一个翻译为双语</p>
+    <div class="bar">
+      <input type="text" id="existingSubSearch" placeholder="搜索剧名..." style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
+      <button class="btn orange" onclick="searchExistingSubs()" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
+    </div>
+    <div id="existingSubResults" style="margin-top:6px"></div>
+    <div id="existingSubStatus" class="status"></div>
+  </div>
+
   <!-- 手动翻译 -->
   <div class="card" style="margin-top:8px">
     <h2>🌐 手动翻译字幕</h2>
@@ -503,6 +515,41 @@ function downloadOS() {
     st.innerHTML = '<div style="text-align:center;padding:8px;font-size:14px;color:#4ade80">\u2705 \u5df2\u4fdd\u5b58\u5230\u5b57\u5e55\u5e93: ' + (d.filename || '\u4e0b\u8f7d\u6210\u529f') + '</div>';
     document.getElementById('rdOsTranslateBtn').disabled = false;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+
+function searchExistingSubs() {
+  var q = document.getElementById('existingSubSearch').value.trim().toLowerCase();
+  if (!q) { alert('输入搜索词'); return; }
+  var st = document.getElementById('existingSubStatus');
+  var r = document.getElementById('existingSubResults');
+  st.className = 'status loading';
+  st.textContent = '搜索...';
+  st.style.display = 'block';
+  r.innerHTML = '';
+  fetch('/api/search-subs?q=' + encodeURIComponent(q)).then(function(r2) { return r2.json(); }).then(function(d) {
+    var files = d.files || [];
+    if (!files.length) { st.className = 'status error'; st.textContent = '没找到匹配的英文字幕'; return; }
+    st.style.display = 'none';
+    r.innerHTML = '<div style="font-size:11px;color:#888;margin-bottom:4px">找到 ' + files.length + ' 个英文字幕：</div>';
+    files.forEach(function(f) {
+      var div = document.createElement('div');
+      div.className = 'vitem';
+      div.setAttribute('data-file', f);
+      div.innerHTML = '<span class="vname">' + f + '</span>';
+      div.addEventListener('click', function() {
+        var st2 = document.getElementById('existingSubStatus');
+        st2.className = 'status loading';
+        st2.textContent = '\u23F3 \u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
+        st2.style.display = 'block';
+        fetch('/api/translate-subtitle?file=' + encodeURIComponent(f)).then(function(r3) { return r3.json(); }).then(function(d2) {
+          if (d2.error) { st2.className = 'status error'; st2.textContent = '\u274C ' + d2.error; return; }
+          st2.className = 'status done';
+          st2.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA\uFF01<a href="' + d2.subtitleUrl + '" class="dl-link" download>\u2B07 ' + (d2.filename || '\u4E0B\u8F7D') + '</a>';
+        });
+      });
+      r.appendChild(div);
+    });
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '搜索失败: ' + e.message; });
+}
 
 function manualTranslate() {
   var fn = document.getElementById('manualTranslateFile').value.trim();
