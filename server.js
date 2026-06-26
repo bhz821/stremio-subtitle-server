@@ -328,7 +328,7 @@ function renderExtractPage() {
     <p style="font-size:12px;color:#888;margin-bottom:6px">搜索字幕库里已有的 .srt 文件，选一个翻译为双语</p>
     <div class="bar">
       <input type="text" id="existingSubSearch" placeholder="搜索剧名..." style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
-      <button class="btn orange" onclick="searchExistingSubs()" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
+      <button class="btn orange" id="existingSubSearchBtn" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
     </div>
     <div id="existingSubResults" style="margin-top:6px"></div>
     <div id="existingSubStatus" class="status"></div>
@@ -507,7 +507,7 @@ function downloadOS() {
     document.getElementById('rdOsTranslateBtn').disabled = false;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
-function searchExistingSubs() {
+function searchExistingSubs() { console.log('searchExistingSubs called');
   var q = document.getElementById('existingSubSearch').value.trim().toLowerCase();
   if (!q) { alert('输入搜索词'); return; }
   var st = document.getElementById('existingSubStatus');
@@ -730,6 +730,14 @@ document.addEventListener('click', function(e) {
     return;
   }
 });
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('existingSubSearchBtn').addEventListener('click', searchExistingSubs);
+  document.getElementById('manualTranslateBtn') && document.getElementById('manualTranslateBtn').addEventListener('click', manualTranslate);
+});
+// Also bind immediately in case DOMContentLoaded already fired
+if (document.getElementById('existingSubSearchBtn')) {
+  document.getElementById('existingSubSearchBtn').onclick = searchExistingSubs;
+}
 checkStremioStream(); switchTab('rd'); loadRD();
 </script>
 </body>
