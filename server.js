@@ -316,7 +316,7 @@ function renderExtractPage() {
     </div>
     <div id="rdOsResults" style="margin-top:6px"></div>
     <div id="rdOsStatus" class="status"></div>
-    <div id="rdOsActions" style="margin-top:8px;display:flex;gap:8px">
+    <div id="rdOsActions" style="display:none;margin-top:8px;gap:8px">
       <button class="btn green" onclick="downloadOS()" style="flex:1">⬇ 下载</button>
       <button class="btn orange" onclick="translateOS()" style="flex:1" id="rdOsTranslateBtn" disabled>🌐 翻译</button>
     </div>
@@ -459,7 +459,7 @@ function searchOS() {
   st.textContent = '搜索...';
   st.style.display = 'block';
   r.innerHTML = '';
-    document.getElementById('rdOsActions').style.display = 'flex'; 'none';
+    document.getElementById('rdOsActions').style.display = 'none';
   var url = q.match(/^tt\\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
   fetch(url).then(function(r2) { return r2.json(); }).then(function(d) {
     var subs = d.subtitles || [];
