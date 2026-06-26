@@ -328,22 +328,13 @@ function renderExtractPage() {
     <p style="font-size:12px;color:#888;margin-bottom:6px">搜索字幕库里已有的 .srt 文件，选一个翻译为双语</p>
     <div class="bar">
       <input type="text" id="existingSubSearch" placeholder="搜索剧名..." style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
-      <button class="btn orange" onclick="searchExistingSubs()" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
+      <button class="btn orange" id="existingSubSearchBtn" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
     </div>
     <div id="existingSubResults" style="margin-top:6px"></div>
     <div id="existingSubStatus" class="status"></div>
   </div>
 
-  <!-- 手动翻译 -->
-  <div class="card" style="margin-top:8px">
-    <h2>🌐 手动翻译字幕</h2>
-    <p style="font-size:12px;color:#888;margin-bottom:6px">输入字幕文件名（不需要路径），直接翻译已下载的英文字幕</p>
-    <div class="bar">
-      <input type="text" id="manualTranslateFile" placeholder="Dinosaurs.S01E01.srt" style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
-      <button class="btn green" onclick="manualTranslate()" style="padding:8px 12px;font-size:12px">🌐 翻译</button>
-    </div>
-    <div id="manualTranslateStatus" class="status"></div>
-  </div>
+  
 
   <!-- SMB 模式 -->
   <div class="card" id="panelSMB">
