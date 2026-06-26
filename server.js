@@ -491,12 +491,15 @@ function searchSMB() {
       el.innerHTML = '<div style="color:#666;font-size:13px;padding:8px 0">没有找到匹配的视频文件</div>';
       return;
     }
-    el.innerHTML = d.videos.map(v => {
-      const sz = v.size > 1073741824 ? (v.size/1073741824).toFixed(1)+'GB' : v.size > 1048576 ? (v.size/1048576).toFixed(0)+'MB' : (v.size/1024).toFixed(0)+'KB';
-      return '<div class="vitem" style="cursor:pointer">' +
-        '<span class="vname">📺 ' + v.name + '</span>' +
-        '<span class="vsize">' + sz + '</span></div>';
-    }).join('');
+    el.innerHTML = el.innerHTML = '';
+    d.videos.forEach(function(v) {
+      var sz = v.size > 1073741824 ? (v.size/1073741824).toFixed(1)+'GB' : v.size > 1048576 ? (v.size/1048576).toFixed(0)+'MB' : (v.size/1024).toFixed(0)+'KB';
+      var div = document.createElement('div');
+      div.className = 'vitem';
+      div.setAttribute('data-path', encodeURIComponent(v.path));
+      div.innerHTML = '<span class="vname">📺 ' + v.name + '</span><span class="vsize">' + sz + '</span>';
+      el.appendChild(div);
+    });
   }, 300);
 }
 
