@@ -112,6 +112,112 @@ function guessLang(filename) {
   return 'Chinese'; // 默认中文不瞎猜
 }
 
+// ======================== 手机端字幕浏览页 ========================
+
+function renderBrowserPage(items, query, typeFilter, totalCount) {
+  const searchVal = query.replace(/"/g, '&quot;');
+  const rows = items.map(f => {
+    const seInfo = f.se ? `S${f.se[1]}E${f.se[2]}` : '';
+    const typeIcon = f.type === 'series' ? '📺' : '🎬';
+    const langLower = f.lang.toLowerCase();
+    const langBadge = `<span class="lang ${langLower}">${f.lang}</span>`;
+    const extUpper = f.ext.slice(1).toUpperCase();
+    const extBadge = f.ext === '.ass' ? `<span class="ext ass">ASS</span>` : `<span class="ext srt">SRT</span>`;
+    const dlUrl = `/subs/${f.encodedRel}`;
+    return `<tr>
+      <td class="name"><a href="${dlUrl}">${typeIcon} ${f.fname}</a></td>
+      <td class="meta">${seInfo ? `<span class="se">${seInfo}</span> ` : ''}${langBadge} ${extBadge}</td>
+      <td class="dl"><a href="${dlUrl}" download="${f.fname}" class="dl-btn" title="下载">⬇</a></td>
+    </tr>`;
+  }).join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>本地字幕 · 浏览器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #111; color: #eee; min-height: 100vh; }
+    .container { max-width: 700px; margin: 0 auto; padding: 12px; }
+    h1 { font-size: 1.25em; margin-bottom: 2px; }
+    .sub { color: #888; font-size: 0.8em; margin-bottom: 12px; }
+    .sub a { color: #3b82f6; text-decoration: none; }
+    .bar { display: flex; gap: 8px; margin-bottom: 10px; }
+    .bar input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #222; color: #eee; font-size: 16px; outline: none; -webkit-appearance: none; }
+    .bar input:focus { border-color: #3b82f6; }
+    .bar button { padding: 10px 16px; border-radius: 8px; border: none; background: #3b82f6; color: #fff; font-size: 15px; cursor: pointer; -webkit-appearance: none; }
+    .tags { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .tag { padding: 5px 12px; border-radius: 16px; border: 1px solid #444; background: transparent; color: #aaa; font-size: 13px; cursor: pointer; text-decoration: none; }
+    .tag.act { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    .tag.clr { border-color: #d55; color: #d55; }
+    .cnt { font-size: 0.8em; color: #666; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    tr { border-bottom: 1px solid #1a1a1a; }
+    td { padding: 8px 4px; vertical-align: middle; }
+    td.name { font-size: 13px; }
+    td.name a { color: #ddd; text-decoration: none; display: block; }
+    td.name a:active { color: #3b82f6; }
+    td.meta { white-space: nowrap; text-align: right; padding-right: 6px; }
+    td.dl { width: 32px; text-align: center; }
+    .lang { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+    .lang.chinese { background: #1a3a2a; color: #4ade80; }
+    .lang.english { background: #1a2a3a; color: #60a5fa; }
+    .lang.japanese { background: #3a1a2a; color: #f472b6; }
+    .lang.korean { background: #2a1a3a; color: #a78bfa; }
+    .ext { font-size: 9px; margin-left: 3px; }
+    .ext.srt { color: #888; }
+    .ext.ass { color: #f59e0b; }
+    .se { color: #fbbf24; font-size: 11px; margin-right: 3px; }
+    .dl-btn { text-decoration: none; font-size: 18px; color: #555; padding: 2px 4px; }
+    .dl-btn:active { color: #3b82f6; }
+    .emp { text-align: center; padding: 40px 0; color: #555; font-size: 14px; }
+    .tip { background: #1a1a2e; border-radius: 8px; padding: 10px 12px; margin-top: 16px; font-size: 12px; color: #777; line-height: 1.6; }
+    .tip code { background: #222; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    .tagline { margin-top: 16px; text-align: center; font-size: 11px; color: #444; }
+    @media (prefers-color-scheme: light) {
+      body { background: #f5f5f5; color: #222; }
+      .bar input { background: #fff; border-color: #ddd; color: #222; }
+      tr { border-bottom-color: #e8e8e8; }
+      td.name a { color: #333; }
+      .tip { background: #e8e8f0; color: #555; }
+      .tip code { background: #ddd; }
+      .cnt { color: #999; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📁 字幕浏览器</h1>
+  <div class="sub"><a href="/addon.json">📦 安装到 Stremio</a> · ${items.length}/${totalCount} 个字幕</div>
+
+  <form class="bar" method="get" action="/">
+    <input type="text" name="q" placeholder="搜索剧名或 S01E02" value="${searchVal}" autofocus>
+    <button type="submit">搜</button>
+  </form>
+
+  <div class="tags">
+    <a class="tag${typeFilter === 'all' ? ' act' : ''}" href="/?${query ? 'q='+encodeURIComponent(query)+'&' : ''}type=all">全部</a>
+    <a class="tag${typeFilter === 'series' ? ' act' : ''}" href="/?${query ? 'q='+encodeURIComponent(query)+'&' : ''}type=series">📺 剧集</a>
+    <a class="tag${typeFilter === 'movie' ? ' act' : ''}" href="/?${query ? 'q='+encodeURIComponent(query)+'&' : ''}type=movie">🎬 电影</a>
+    ${query ? `<a class="tag clr" href="/">✕ 清除</a>` : ''}
+  </div>
+
+  ${items.length === 0 ? '<div class="emp">没有匹配的字幕文件</div>' : ''}
+
+  ${items.length > 0 ? `<table>${rows}</table>` : ''}
+
+  <div class="tip">
+    <strong>📱 iPhone 用法</strong><br>
+    在 Stremio 网页版点"Play in VLC"后，切回 Safari 打开本页 → 搜剧名 → 点 ⬇ 下载字幕 → 在 VLC 中"添加字幕文件"
+  </div>
+  <div class="tagline">iMac · ~/.stremio-subs/ · ${totalCount} 个文件</div>
+</div>
+</body>
+</html>`;
+}
+
 // ======================== HTTP 服务器 ========================
 
 const server = http.createServer((req, res) => {
@@ -155,41 +261,36 @@ const server = http.createServer((req, res) => {
       return serveJSON(res, manifest);
     }
 
-    // ---- 路由: 安装页 ----
+    // ---- 路由: 主页 - 手机端字幕浏览器 ----
     if (pathname === '/') {
+      const query = (parsed.query.q || '').trim();
+      const typeFilter = parsed.query.type || 'all';
+      const searchLower = query.toLowerCase();
+
+      let files = scanSubFiles(SUBS_DIR);
+      const totalCount = files.length;
+
+      if (searchLower) {
+        files = files.filter(fp => path.basename(fp).toLowerCase().includes(searchLower));
+      }
+
+      const items = files.map(fp => {
+        const fname = path.basename(fp);
+        const relPath = path.relative(SUBS_DIR, fp);
+        const encodedRel = relPath.split(path.sep).map(s => encodeURIComponent(s)).join('/');
+        const se = fname.match(/S(\d{2})E(\d{2})/i);
+        const lang = guessLang(fname);
+        const ext = path.extname(fname).toLowerCase();
+        const type = se ? 'series' : 'movie';
+        return { fname, relPath, encodedRel, se, lang, ext, type };
+      });
+
+      let filtered = items;
+      if (typeFilter === 'series') filtered = items.filter(f => f.type === 'series');
+      else if (typeFilter === 'movie') filtered = items.filter(f => f.type === 'movie');
+
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(`<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>本地字幕插件</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 20px; text-align: center; }
-    h1 { font-size: 1.5em; }
-    p { color: #555; line-height: 1.6; }
-    .btn { display: inline-block; padding: 12px 28px; background: #3b82f6; color: #fff; text-decoration: none; border-radius: 8px; font-size: 1.1em; margin: 10px 0; }
-    .code { background: #f4f4f4; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.9em; word-break: break-all; }
-    .steps { text-align: left; margin: 20px 0; }
-    .steps li { margin: 8px 0; }
-  </style>
-</head>
-<body>
-  <h1>📁 本地字幕插件</h1>
-  <p>从 iMac 本地文件夹加载 .srt 字幕到 Stremio</p>
-  <a class="btn" href="stremio://192.168.2.231:5800/manifest.json">Install</a>
-  <p><small>或手动添加:</small></p>
-  <div class="code">http://192.168.2.231:5800/manifest.json</div>
-  <hr style="margin:24px 0">
-  <h3 style="text-align:left">📖 使用说明</h3>
-  <ol class="steps">
-    <li>把 .srt 字幕文件放进 <code>~/.stremio-subs/TV/</code> 或 <code>~/.stremio-subs/Movies/</code></li>
-    <li>文件名必须包含 <code>S01E01</code> 格式（剧集）Stremio 才能自动匹配</li>
-    <li>安装本插件后，Stremio 播片时在字幕列表中选择</li>
-  </ol>
-  <p><small>字幕目录: ~/.stremio-subs/</small></p>
-</body>
-</html>`);
+      return res.end(renderBrowserPage(filtered, query, typeFilter, totalCount));
     }
 
     // ---- 路由: 字幕查询 ----
@@ -394,6 +495,7 @@ server.listen(PORT, HOST, () => {
   console.log(`\n  🎬 Stremio 本地字幕服务器`);
   console.log(`  ─────────────────────────────`);
   console.log(`  Addon:  http://${LAN_IP}:${PORT}/addon.json`);
+  console.log(`  字幕浏览器: http://${LAN_IP}:${PORT}`);
   console.log(`  字幕目录: ${SUBS_DIR}`);
   console.log(`  字幕文件: ${scanSubFiles(SUBS_DIR).length} 个\n`);
   console.log(`  在 Stremio 中安装:`);
