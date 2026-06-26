@@ -486,7 +486,8 @@ function downloadOS() {
   st.textContent = '下载+翻译...';
   st.style.display = 'block';
   btn.disabled = true;
-  fetch('/api/download-subtitle?file_id=' + selectedOSFileId).then(function(r) { return r.json(); }).then(function(d) {
+  var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
+  fetch('/api/download-subtitle?file_id=' + selectedOSFileId + '&filename=' + encodeURIComponent(qName)).then(function(r) { return r.json(); }).then(function(d) {
     btn.disabled = false;
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
