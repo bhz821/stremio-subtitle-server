@@ -322,6 +322,17 @@ function renderExtractPage() {
     </div>
   </div>
 
+  <!-- 手动翻译 -->
+  <div class="card" style="margin-top:8px">
+    <h2>🌐 手动翻译字幕</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:6px">输入字幕文件名（不需要路径），直接翻译已下载的英文字幕</p>
+    <div class="bar">
+      <input type="text" id="manualTranslateFile" placeholder="Dinosaurs.S01E01.srt" style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
+      <button class="btn green" onclick="manualTranslate()" style="padding:8px 12px;font-size:12px">🌐 翻译</button>
+    </div>
+    <div id="manualTranslateStatus" class="status"></div>
+  </div>
+
   <!-- SMB 模式 -->
   <div class="card" id="panelSMB">
     <h2>📁 从 SMB 本地视频提取</h2>
@@ -492,6 +503,20 @@ function downloadOS() {
     st.innerHTML = '<div style="text-align:center;padding:8px;font-size:14px;color:#4ade80">\u2705 \u5df2\u4fdd\u5b58\u5230\u5b57\u5e55\u5e93: ' + (d.filename || '\u4e0b\u8f7d\u6210\u529f') + '</div>';
     document.getElementById('rdOsTranslateBtn').disabled = false;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+
+function manualTranslate() {
+  var fn = document.getElementById('manualTranslateFile').value.trim();
+  if (!fn) { alert('输入文件名'); return; }
+  var st = document.getElementById('manualTranslateStatus');
+  st.className = 'status loading';
+  st.textContent = '\u23F3 \u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
+  st.style.display = 'block';
+  fetch('/api/translate-subtitle?file=' + encodeURIComponent(fn)).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
+    st.className = 'status done';
+    st.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA\uFF01<a href="' + d.subtitleUrl + '" class="dl-link" download>\u2B07 ' + (d.filename || '\u4E0B\u8F7D') + '</a>';
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+}
 
 function translateOS() {
   var fileName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\\.+/g, '.').replace(/^\\.|\\.$/g, '') + '.srt';
