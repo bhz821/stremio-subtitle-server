@@ -491,7 +491,7 @@ function downloadOS() {
     st.className = 'status done';
     var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
     window._lastDlFile = d.filename || '';
-    st.innerHTML = dlLink + trBtn;
+    st.innerHTML = dlLink;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
 function translateOS() {
