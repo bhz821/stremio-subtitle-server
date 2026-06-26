@@ -318,7 +318,7 @@ function renderExtractPage() {
     <div id="rdOsStatus" class="status"></div>
     <div id="rdOsActions" style="margin-top:8px;display:flex;gap:8px">
       <button class="btn green" onclick="downloadOS()" style="flex:1">⬇ 下载</button>
-      <button class="btn orange" onclick="translateOS(window._lastDlFile)" style="flex:1" id="rdOsTranslateBtn" disabled>🌐 翻译</button>
+      <button class="btn orange" onclick="translateOS()" style="flex:1" id="rdOsTranslateBtn" disabled>🌐 翻译</button>
     </div>
   </div>
 
@@ -497,8 +497,9 @@ function downloadOS() {
     st.innerHTML = dlLink + trBtn;
   }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
-function translateOS(fileName) {
-  if (!fileName) { alert('no file'); return; }
+function translateOS() {
+  var fileName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
+  if (!fileName || fileName === '.srt') { alert('no file'); return; }
   var st = document.getElementById('rdOsStatus');
   st.className = 'status loading';
   st.textContent = '\u23F3 \u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
