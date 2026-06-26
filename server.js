@@ -616,6 +616,26 @@ function startExtract(mode) {
 }
 
 // 启动自动检测
+document.addEventListener('click', function(e) {
+  var t = e.target;
+  if (t.classList.contains('vitem') || t.closest('.vitem')) {
+    var item = t.classList.contains('vitem') ? t : t.closest('.vitem');
+    var path = item.getAttribute('data-path');
+    if (path) selectSMB(decodeURIComponent(path), (item.querySelector('.vname')||{}).textContent || '');
+    return;
+  }
+  if (t.classList.contains('track-item')) {
+    var idx = Array.prototype.indexOf.call(t.parentNode.children, t);
+    selectTrack(idx, t.parentNode.id.replace('Tracks','').toLowerCase());
+    return;
+  }
+  if (t.closest('#rdOsResults .rd-item')) {
+    var items = Array.prototype.slice.call(t.closest('#rdOsResults').children);
+    var ii = items.indexOf(t.closest('.rd-item'));
+    if (typeof osResultsFileIds !== 'undefined' && osResultsFileIds[ii]) selectOS(ii, osResultsFileIds[ii]);
+    return;
+  }
+});
 checkStremioStream(); switchTab('rd'); loadRD();
 </script>
 </body>
