@@ -476,25 +476,23 @@ function selectOS(idx, fileId) {
   if (typeof osResultsSubs !== 'undefined' && osResultsSubs[idx]) selectedOSFilename = osResultsSubs[idx].filename || '';
   var items = document.querySelectorAll('#rdOsResults .rd-item');
   for (var i = 0; i < items.length; i++) items[i].style.background = i === idx ? '#1a3a1a' : '';
-  document.getElementById('rdOsDownloadBtn').style.display = 'inline-block';
+  document.getElementById('rdOsActions').style.display = 'flex';
 }
 function downloadOS() {
   if (!selectedOSFileId) { alert('先选一个字幕'); return; }
   var st = document.getElementById('rdOsStatus');
-  var btn = document.getElementById('rdOsDownloadBtn');
   st.className = 'status loading';
-  st.textContent = '下载+翻译...';
+  st.textContent = '下载...';
   st.style.display = 'block';
-  btn.disabled = true;
   var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9一-鿿]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
   fetch('/api/download-subtitle?file_id=' + selectedOSFileId + '&filename=' + encodeURIComponent(qName)).then(function(r) { return r.json(); }).then(function(d) {
-    btn.disabled = false;
+
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
     var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
     window._lastDlFile = d.filename || '';
     st.innerHTML = dlLink + trBtn;
-  }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
 function translateOS() {
   var fileName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
