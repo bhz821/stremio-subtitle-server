@@ -488,21 +488,21 @@ function downloadOS() {
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
     var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
-    var trBtn = '<button class="btn green" onclick="translateOS(' + (d.fileId || selectedOSFileId) + ')" style="margin-top:8px">\uD83C\uDF10 \u7FFB\u8BD1\u4E3A\u53CC\u8BED</button>';
+    var trBtn = '<button class="btn green" onclick="translateOS(\\'' + (d.filename || '') + '\\')" style="margin-top:8px">\uD83C\uDF10 \u7FFB\u8BD1\u4E3A\u53CC\u8BED</button>';
     st.innerHTML = dlLink + trBtn;
   }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
-function translateOS(fileId) {
+function translateOS(fileName) {
+  if (!fileName) { alert('no file'); return; }
   var st = document.getElementById('rdOsStatus');
   st.className = 'status loading';
-  st.textContent = '\u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
+  st.textContent = '\u23F3 \u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
   st.style.display = 'block';
-  fetch('/api/translate-subtitle?file_id=' + fileId).then(function(r) { return r.json(); }).then(function(d) {
+  fetch('/api/translate-subtitle?file=' + encodeURIComponent(fileName)).then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
-    st.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA!<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
+    st.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA\uFF01<a href="' + d.subtitleUrl + '" class="dl-link" download>\u2B07 ' + (d.filename || '\u4E0B\u8F7D') + '</a>';
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
-}
 }
 
 // 搜索 SMB 视频
