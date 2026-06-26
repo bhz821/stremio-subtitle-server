@@ -316,7 +316,10 @@ function renderExtractPage() {
     </div>
     <div id="rdOsResults" style="margin-top:6px"></div>
     <div id="rdOsStatus" class="status"></div>
-    <button class="btn green" id="rdOsDownloadBtn" style="display:none" onclick="downloadOS()">⬇ 下载并翻译</button>
+    <div id="rdOsActions" style="margin-top:8px;display:flex;gap:8px">
+      <button class="btn green" onclick="downloadOS()" style="flex:1">⬇ 下载</button>
+      <button class="btn orange" onclick="translateOS(window._lastDlFile)" style="flex:1" id="rdOsTranslateBtn" disabled>🌐 翻译</button>
+    </div>
   </div>
 
   <!-- SMB 模式 -->
@@ -456,7 +459,7 @@ function searchOS() {
   st.textContent = '搜索...';
   st.style.display = 'block';
   r.innerHTML = '';
-  document.getElementById('rdOsDownloadBtn').style.display = 'none';
+    document.getElementById('rdOsActions').style.display = 'flex'; 'none';
   var url = q.match(/^tt\\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
   fetch(url).then(function(r2) { return r2.json(); }).then(function(d) {
     var subs = d.subtitles || [];
