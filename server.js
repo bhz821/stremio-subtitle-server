@@ -425,7 +425,7 @@ function selectRD(url, name) {
     if (!tracks.length) { document.getElementById('rdTracks').innerHTML = '<span style="color:#f59e0b;font-size:13px">\u26a0 没有字幕轨道</span>'; st.style.display = 'none'; return; }
     document.getElementById('rdTracks').innerHTML = tracks.map(function(t,i) {
       var lang = (t.tags && t.tags.language) || '?';
-      return '<span class="track-item" id="rdTrack' + i + '" onclick="selectTrack(' + i + ',\'rd\')">\uD83C\uDFAC 轨道' + i + ' (' + lang + ')</span>';
+      return '<span class="track-item" id="rdTrack' + i + '" >\uD83C\uDFAC 轨道' + i + ' (' + lang + ')</span>';
     }).join('');
     selectTrack(0, 'rd');
     document.getElementById('rdExtractBtn').style.display = 'inline-block';
@@ -434,7 +434,7 @@ function selectRD(url, name) {
 }
 
 // ===== OS 搜索 =====
-var selectedOSFileId = null;
+var selectedOSFileId = null; var osResultsFileIds = [];
 function searchOS() {
   var q = document.getElementById('rdImdbId').value.trim();
   if (!q) { alert('输入片名或 IMDB ID'); return; }
@@ -451,9 +451,9 @@ function searchOS() {
     if (!subs.length) { st.className = 'status error'; st.textContent = '没找到字幕'; return; }
     st.style.display = 'none';
     r.innerHTML = subs.map(function(s, i) {
-      return '<div class="rd-item" onclick="selectOS(' + i + ',\'' + s.file_id + '\')"><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + '</span></div>';
+      return '<div class="rd-item" ><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + '</span></div>';
     }).join('');
-    selectOS(0, subs[0].file_id);
+    osResultsFileIds = subs.map(function(s) { return s.file_id; }); selectOS(0, subs[0].file_id);
   }).catch(function(e) { st.className = 'status error'; st.textContent = '搜索失败: ' + e.message; });
 }
 function selectOS(idx, fileId) {
@@ -493,7 +493,7 @@ function searchSMB() {
     }
     el.innerHTML = d.videos.map(v => {
       const sz = v.size > 1073741824 ? (v.size/1073741824).toFixed(1)+'GB' : v.size > 1048576 ? (v.size/1048576).toFixed(0)+'MB' : (v.size/1024).toFixed(0)+'KB';
-      return '<div class="vitem" onclick="selectSMB(\\'' + v.path.replace(/\\/g, '\\\\') + '\\', \\'' + v.name.replace(/\\'/g, '\\\\\\'') + '\\')" style="cursor:pointer">' +
+      return '<div class="vitem" style="cursor:pointer">' +
         '<span class="vname">📺 ' + v.name + '</span>' +
         '<span class="vsize">' + sz + '</span></div>';
     }).join('');
@@ -523,7 +523,7 @@ function selectSMB(path, name) {
     }
     const html = tracks.map((t, i) => {
       const lang = t.tags && t.tags.language ? t.tags.language : 'unknown';
-      return '<span class="track-item" id="smbTrack' + i + '" onclick="selectTrack(' + i + ', \\'smb\\')">🎬 轨道 ' + i + ' (' + lang + ')</span>';
+      return '<span class="track-item" id="smbTrack' + i + '" >🎬 轨道 ' + i + ' (' + lang + ')</span>';
     }).join('');
     document.getElementById('smbTracks').innerHTML = html;
     // 默认选中第一个
@@ -570,7 +570,7 @@ function probeUrl() {
     }
     const html = tracks.map((t, i) => {
       const lang = t.tags && t.tags.language ? t.tags.language : 'unknown';
-      return '<span class="track-item" id="urlTrack' + i + '" onclick="selectTrack(' + i + ', \\'url\\')">🎬 轨道 ' + i + ' (' + lang + ')</span>';
+      return '<span class="track-item" id="urlTrack' + i + '" >🎬 轨道 ' + i + ' (' + lang + ')</span>';
     }).join('');
     document.getElementById('urlTracks').innerHTML = html;
     selectTrack(0, 'url');
