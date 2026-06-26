@@ -488,8 +488,22 @@ function downloadOS() {
     btn.disabled = false;
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
-    st.innerHTML = '\u2705 完成!<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
+    var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
+    var trBtn = '<button class="btn green" onclick="translateOS(' + (d.fileId || selectedOSFileId) + ')" style="margin-top:8px">\uD83C\uDF10 \u7FFB\u8BD1\u4E3A\u53CC\u8BED</button>';
+    st.innerHTML = dlLink + trBtn;
   }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+
+function translateOS(fileId) {
+  var st = document.getElementById('rdOsStatus');
+  st.className = 'status loading';
+  st.textContent = '\u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
+  st.style.display = 'block';
+  fetch('/api/translate-subtitle?file_id=' + fileId).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
+    st.className = 'status done';
+    st.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA!<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+}
 }
 
 // 搜索 SMB 视频
@@ -1041,16 +1055,27 @@ const server = http.createServer((req, res) => {
               if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
               var outFile = path.join(outDir, 'os_' + fileId + '.srt');
               fs.writeFileSync(outFile, Buffer.concat(chunks));
-              // 后台翻译
-              var biFile = path.join(outDir, 'os_' + fileId + '.zh-en.srt');
-              translateToBilingual(outFile, biFile).then(function() {
-                log('OS 翻译完成: ' + biFile);
-              }).catch(function(e) {
-                log('OS 翻译失败: ' + e.message);
-              });
-              serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.srt', filename: 'os_' + fileId + '.srt' });
+              log('OS 下载完成: ' + outFile);
+              serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.srt', filename: 'os_' + fileId + '.srt', fileId: fileId });
             });
           });
+        } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+      })();
+      return;
+    }
+
+    // ---- API: OS 字幕翻译 ----
+    if (pathname === '/api/translate-subtitle') {
+      var fileId = parseInt(parsed.query.file_id || '0', 10);
+      if (!fileId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file_id' })); }
+      (async function() {
+        try {
+          var inFile = path.join(SUBS_DIR, 'TV', 'os_' + fileId + '.srt');
+          var outFile = path.join(SUBS_DIR, 'TV', 'os_' + fileId + '.zh-en.srt');
+          if (!fs.existsSync(inFile)) { res.writeHead(404); return res.end(JSON.stringify({ error: 'file not found' })); }
+          await translateToBilingual(inFile, outFile);
+          log('OS 翻译完成: ' + outFile);
+          serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.zh-en.srt', filename: 'os_' + fileId + '.zh-en.srt' });
         } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
       })();
       return;
