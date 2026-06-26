@@ -15,6 +15,7 @@ const path = require('path');
 const url = require('url');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
+const https = require('https');
 
 // ====== 访问日志 ======
 function log(msg) {
@@ -294,8 +295,28 @@ function renderExtractPage() {
   </div>
 
   <div class="nav">
-    <a href="#smb" class="act" id="tabSMB" onclick="switchTab('smb')">📁 本地视频</a>
-    <a href="#url" id="tabURL" onclick="switchTab('url')">🔗 粘贴 URL</a>
+    <a href="#rd" class="act" id="tabRD" onclick="switchTab('rd');loadRD()">⚡ Debrid</a>
+    <a href="#smb" id="tabSMB" onclick="switchTab('smb')">📁 本地</a>
+    <a href="#url" id="tabURL" onclick="switchTab('url')">🔗 URL</a>
+  </div>
+
+  <!-- RD 模式 -->
+  <div class="card" id="panelRD">
+    <h2>⚡ Real-Debrid 最近下载</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">点你刚才播过的视频，提取内嵌英文字幕并翻译</p>
+    <div id="rdList" style="margin-bottom:8px">加载中...</div>
+    <div id="rdTracks" class="tracks"></div>
+    <div id="rdStatus" class="status"></div>
+    <button class="btn green" id="rdExtractBtn" style="display:none" onclick="startExtract('rd')">🚀 提取并翻译</button>
+    <hr style="border-color:#333;margin:12px 0">
+    <div style="font-size:13px;color:#888;margin-bottom:6px">或者从 OpenSubtitles 搜索：</div>
+    <div class="bar">
+      <input type="text" id="rdImdbId" placeholder="片名或 IMDB ID (tt32493765)" style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
+      <button class="btn orange" onclick="searchOS()" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
+    </div>
+    <div id="rdOsResults" style="margin-top:6px"></div>
+    <div id="rdOsStatus" class="status"></div>
+    <button class="btn green" id="rdOsDownloadBtn" style="display:none" onclick="downloadOS()">⬇ 下载并翻译</button>
   </div>
 
   <!-- SMB 模式 -->
@@ -340,10 +361,13 @@ let selectedURL = null;
 let selectedTrack = 0;
 
 function switchTab(tab) {
-  document.getElementById('tabSMB').className = tab === 'smb' ? 'act' : '';
-  document.getElementById('tabURL').className = tab === 'url' ? 'act' : '';
-  document.getElementById('panelSMB').style.display = tab === 'smb' ? 'block' : 'none';
-  document.getElementById('panelURL').style.display = tab === 'url' ? 'block' : 'none';
+  var tabs = {rd:'RD',smb:'SMB',url:'URL'};
+  Object.keys(tabs).forEach(function(t) {
+    document.getElementById('tab' + tabs[t]).className = '';
+    document.getElementById('panel' + tabs[t]).style.display = 'none';
+  });
+  document.getElementById('tab' + tabs[tab]).className = 'act';
+  document.getElementById('panel' + tabs[tab]).style.display = 'block';
 }
 
 // 自动检测当前 Stremio 流
@@ -360,6 +384,98 @@ async function checkStremioStream() {
   } catch(e) {
     document.getElementById('detectMsg').innerHTML = '<span class="none">ℹ️ 无法检测 Stremio 状态</span>';
   }
+}
+
+// ===== RD 加载 =====
+async function loadRD() {
+  var el = document.getElementById('rdList');
+  el.innerHTML = '加载中...';
+  try {
+    var r = await fetch('/api/rd-downloads');
+    var d = await r.json();
+    if (!d.downloads || !d.downloads.length) {
+      el.innerHTML = '<div style="color:#888;font-size:13px;padding:8px 0">没有 RD 下载记录。先播一个视频再回来。</div>';
+      return;
+    }
+    el.innerHTML = '';
+    d.downloads.forEach(function(v) {
+      var sz = v.filesize > 1073741824 ? (v.filesize/1073741824).toFixed(1) + 'GB' : v.filesize > 1048576 ? (v.filesize/1048576).toFixed(0) + 'MB' : (v.filesize/1024).toFixed(0) + 'KB';
+      var div = document.createElement('div');
+      div.className = 'rd-item';
+      div.innerHTML = '<span class="rbadge">RD</span><span class="rname">' + (v.filename || '?') + '</span><span class="rsize">' + sz + '</span>';
+      div.addEventListener('click', function() { selectRD(v.download, v.filename); });
+      el.appendChild(div);
+    });
+  } catch(e) {
+    el.innerHTML = '<div style="color:#f87171;font-size:13px">加载失败: ' + e.message + '</div>';
+  }
+}
+function selectRD(url, name) {
+  selectedURL = url;
+  selectedTrack = 0;
+  document.getElementById('rdTracks').innerHTML = '探测中...';
+  document.getElementById('rdExtractBtn').style.display = 'none';
+  var st = document.getElementById('rdStatus');
+  st.className = 'status loading';
+  st.textContent = '探测 ' + name + ' 的字幕轨道...';
+  st.style.display = 'block';
+  fetch('/api/probe?url=' + encodeURIComponent(url)).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { st.className = 'status error'; st.textContent = '探测失败: ' + d.error; return; }
+    var tracks = d.tracks || [];
+    if (!tracks.length) { document.getElementById('rdTracks').innerHTML = '<span style="color:#f59e0b;font-size:13px">\u26a0 没有字幕轨道</span>'; st.style.display = 'none'; return; }
+    document.getElementById('rdTracks').innerHTML = tracks.map(function(t,i) {
+      var lang = (t.tags && t.tags.language) || '?';
+      return '<span class="track-item" id="rdTrack' + i + '" onclick="selectTrack(' + i + ',\'rd\')">\uD83C\uDFAC 轨道' + i + ' (' + lang + ')</span>';
+    }).join('');
+    selectTrack(0, 'rd');
+    document.getElementById('rdExtractBtn').style.display = 'inline-block';
+    st.style.display = 'none';
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '请求失败: ' + e.message; });
+}
+
+// ===== OS 搜索 =====
+var selectedOSFileId = null;
+function searchOS() {
+  var q = document.getElementById('rdImdbId').value.trim();
+  if (!q) { alert('输入片名或 IMDB ID'); return; }
+  var st = document.getElementById('rdOsStatus');
+  var r = document.getElementById('rdOsResults');
+  st.className = 'status loading';
+  st.textContent = '搜索...';
+  st.style.display = 'block';
+  r.innerHTML = '';
+  document.getElementById('rdOsDownloadBtn').style.display = 'none';
+  var url = q.match(/^tt\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
+  fetch(url).then(function(r2) { return r2.json(); }).then(function(d) {
+    var subs = d.subtitles || [];
+    if (!subs.length) { st.className = 'status error'; st.textContent = '没找到字幕'; return; }
+    st.style.display = 'none';
+    r.innerHTML = subs.map(function(s, i) {
+      return '<div class="rd-item" onclick="selectOS(' + i + ',\'' + s.file_id + '\')"><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + '</span></div>';
+    }).join('');
+    selectOS(0, subs[0].file_id);
+  }).catch(function(e) { st.className = 'status error'; st.textContent = '搜索失败: ' + e.message; });
+}
+function selectOS(idx, fileId) {
+  selectedOSFileId = fileId;
+  var items = document.querySelectorAll('#rdOsResults .rd-item');
+  for (var i = 0; i < items.length; i++) items[i].style.background = i === idx ? '#1a3a1a' : '';
+  document.getElementById('rdOsDownloadBtn').style.display = 'inline-block';
+}
+function downloadOS() {
+  if (!selectedOSFileId) { alert('先选一个字幕'); return; }
+  var st = document.getElementById('rdOsStatus');
+  var btn = document.getElementById('rdOsDownloadBtn');
+  st.className = 'status loading';
+  st.textContent = '下载+翻译...';
+  st.style.display = 'block';
+  btn.disabled = true;
+  fetch('/api/download-subtitle?file_id=' + selectedOSFileId).then(function(r) { return r.json(); }).then(function(d) {
+    btn.disabled = false;
+    if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
+    st.className = 'status done';
+    st.innerHTML = '\u2705 完成!<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
+  }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 }
 
 // 搜索 SMB 视频
@@ -497,7 +613,7 @@ function startExtract(mode) {
 }
 
 // 启动自动检测
-checkStremioStream();
+checkStremioStream(); switchTab('rd'); loadRD();
 </script>
 </body>
 </html>`;
@@ -649,6 +765,108 @@ function scanSMBVideos(searchTerm) {
   return results;
 }
 
+// ====== Real-Debrid API ======
+const RD_API_KEY = (() => {
+  try {
+    const c = fs.readFileSync(path.join(__dirname, '.env-rd'), 'utf-8');
+    const m = c.match(/^RD_API_KEY=(.+)$/m);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+})();
+
+function fetchRDDownloads(limit) {
+  limit = limit || 10;
+  return new Promise((resolve) => {
+    if (!RD_API_KEY) return resolve([]);
+    const u = new URL('https://api.real-debrid.com/rest/1.0/downloads');
+    u.searchParams.set('limit', String(limit));
+    https.get(u, { headers: { 'Authorization': 'Bearer ' + RD_API_KEY }, timeout: 10000 }, (r) => {
+      let d = '';
+      r.on('data', chunk => d += chunk);
+      r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve([]); } });
+    }).on('error', () => resolve([]));
+  });
+}
+
+// ====== OpenSubtitles API ======
+const OS_API_KEY = (() => {
+  try {
+    const c2 = fs.readFileSync(path.join(__dirname, '.env-os'), 'utf-8');
+    const m = c2.match(/^OS_API_KEY=(.+)$/m);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+})();
+const OS_TOKEN = (() => {
+  try {
+    const c2 = fs.readFileSync(path.join(__dirname, '.env-os'), 'utf-8');
+    const m = c2.match(/^OS_TOKEN=(.+)$/m);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+})();
+
+function searchOpenSubtitles(imdbId, season, episode, query) {
+  return new Promise((resolve) => {
+    if (!OS_API_KEY) return resolve([]);
+    let path2;
+    if (query) {
+      path2 = '/api/v1/subtitles?query=' + encodeURIComponent(query.toLowerCase()) + '&languages=en';
+      if (season != null) path2 += '&season_number=' + season + '&episode_number=' + (episode || 1);
+    } else {
+      path2 = '/api/v1/subtitles?imdb_id=' + imdbId.replace(/^tt/, '') + '&languages=en';
+    }
+    osApiFetch(path2, resolve);
+  });
+}
+function osApiFetch(path2, resolve, retries) {
+  retries = retries || 0;
+  if (retries > 3) { resolve([]); return; }
+  const req = https.request({
+    hostname: 'api.opensubtitles.com', path: path2, timeout: 15000,
+    headers: { 'Api-Key': OS_API_KEY, 'User-Agent': 'stremio-local-subs/1.0' }
+  }, (r) => {
+    let d = '';
+    r.on('data', chunk => d += chunk);
+    r.on('end', () => {
+      if (r.statusCode >= 301 && r.statusCode <= 303 && r.headers.location) {
+        osApiFetch(r.headers.location, resolve, retries + 1);
+        return;
+      }
+      try {
+        const data = JSON.parse(d);
+        const subs = (data.data || []).filter(s => { const a = s.attributes || {}; return a.language === 'en' && a.files && a.files.length > 0; });
+        subs.sort((a, b) => (b.attributes.download_count || 0) - (a.attributes.download_count || 0));
+        resolve(subs.slice(0, 5).map(s => ({ id: 'os-' + s.id, file_id: s.attributes.files[0].file_id, lang: 'English', filename: s.attributes.files[0].file_name || '' })));
+      } catch { resolve([]); }
+    });
+  });
+  req.on('error', () => resolve([]));
+  req.end();
+}
+function osDownload(fileId) {
+  return new Promise((resolve, reject) => {
+    if (!OS_API_KEY || !OS_TOKEN) return reject(new Error('no OS creds'));
+    const body = JSON.stringify({ file_id: fileId });
+    const curl = spawn('/usr/bin/curl', [
+      '-s', '-X', 'POST',
+      '-H', 'Api-Key: ' + OS_API_KEY,
+      '-H', 'Authorization: Bearer ' + OS_TOKEN,
+      '-H', 'Content-Type: application/json',
+      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      '-d', body,
+      'https://api.opensubtitles.com/api/v1/download'
+    ], { timeout: 20000 });
+    let stdout = '', stderr = '';
+    curl.stdout.on('data', d => stdout += d);
+    curl.stderr.on('data', d => stderr += d);
+    curl.on('close', code => {
+      if (code !== 0) return reject(new Error('curl exit ' + code));
+      try { const data = JSON.parse(stdout); if (data.link) resolve(data.link); else reject(new Error('no link')); }
+      catch (e) { reject(new Error(stderr.slice(0, 100) || 'parse fail')); }
+    });
+    curl.on('error', reject);
+  });
+}
+
 // ======================== HTTP 服务器 ========================
 
 const server = http.createServer((req, res) => {
@@ -748,6 +966,50 @@ const server = http.createServer((req, res) => {
         s.end();
       } catch {}
       return serveJSON(res, { videos: results.slice(0, 200), currentStream });
+    }
+
+    // ---- API: RD 最近下载 ----
+    if (pathname === '/api/rd-downloads') {
+      fetchRDDownloads(10).then(function(list) {
+        var videos = (list || []).filter(function(f) { return /\.(mkv|mp4|avi|mov|ts)$/i.test(f.filename || '') });
+        serveJSON(res, { downloads: videos });
+      }).catch(function() { serveJSON(res, { downloads: [] }); });
+      return;
+    }
+
+    // ---- API: OS 搜索 ----
+    if (pathname === '/api/search-subtitles') {
+      var imdbId = (parsed.query.imdb_id || '').replace(/^tt/, '');
+      var query = parsed.query.query || '';
+      if (!imdbId && !query) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need imdb_id or query' })); }
+      searchOpenSubtitles('tt' + imdbId, null, null, query).then(function(subs) {
+        serveJSON(res, { subtitles: subs });
+      }).catch(function() { serveJSON(res, { subtitles: [] }); });
+      return;
+    }
+
+    // ---- API: OS 下载 ----
+    if (pathname === '/api/download-subtitle') {
+      var fileId = parseInt(parsed.query.file_id || '0', 10);
+      if (!fileId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file_id' })); }
+      (async function() {
+        try {
+          var dlUrl = await osDownload(fileId);
+          var u = new URL(dlUrl);
+          https.get({ hostname: u.hostname, path: u.pathname + u.search, headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 30000 }, function(r) {
+            var chunks = [];
+            r.on('data', function(c) { chunks.push(c); });
+            r.on('end', function() {
+              var outDir = path.join(SUBS_DIR, 'TV');
+              if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+              var outFile = path.join(outDir, 'os_' + fileId + '.srt');
+              fs.writeFileSync(outFile, Buffer.concat(chunks));
+              serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.srt', filename: 'os_' + fileId + '.srt' });
+            });
+          });
+        } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+      })();
+      return;
     }
 
     // ---- API: 探测视频字幕轨道 ----
