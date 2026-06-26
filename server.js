@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const os = require('os');
+const { spawn, execFile } = require('child_process');
 
 // ====== 访问日志 ======
 function log(msg) {
@@ -218,6 +219,436 @@ function renderBrowserPage(items, query, typeFilter, totalCount) {
 </html>`;
 }
 
+// ======================== 手机端字幕提取页 ========================
+
+function renderExtractPage() {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>字幕提取 · 工具</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #111; color: #eee; min-height: 100vh; padding: 12px; }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { font-size: 1.2em; margin-bottom: 4px; }
+    .sub { color: #888; font-size: 0.8em; margin-bottom: 12px; }
+    .sub a { color: #3b82f6; text-decoration: none; }
+    .card { background: #1a1a1a; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    .card h2 { font-size: 1em; margin-bottom: 8px; }
+    .bar { display: flex; gap: 8px; margin-bottom: 8px; }
+    .bar input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #222; color: #eee; font-size: 14px; outline: none; -webkit-appearance: none; }
+    .bar input:focus { border-color: #3b82f6; }
+    .bar button, .btn { padding: 10px 16px; border-radius: 8px; border: none; background: #3b82f6; color: #fff; font-size: 14px; cursor: pointer; -webkit-appearance: none; white-space: nowrap; }
+    .btn:disabled { opacity: 0.5; }
+    .btn.green { background: #22c55e; }
+    .btn.orange { background: #f59e0b; }
+    .btn.sm { padding: 6px 12px; font-size: 12px; }
+    .tag { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 11px; margin: 2px; cursor: pointer; border: 1px solid #444; background: transparent; color: #aaa; }
+    .tag.act { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    .tag.green { background: #22c55e; color: #000; border-color: #22c55e; }
+    #results { margin-top: 8px; }
+    .vitem { padding: 8px 0; border-bottom: 1px solid #1a1a1a; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .vitem .vname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vitem .vsize { color: #666; font-size: 11px; white-space: nowrap; }
+    .tracks { margin: 8px 0; }
+    .track-item { display: inline-block; padding: 6px 12px; margin: 3px; border-radius: 8px; background: #222; font-size: 12px; cursor: pointer; border: 1px solid transparent; }
+    .track-item.act { border-color: #3b82f6; background: #1a2a4a; }
+    .url-input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #222; color: #eee; font-size: 13px; outline: none; margin-bottom: 8px; }
+    .url-input:focus { border-color: #3b82f6; }
+    .status { padding: 10px; border-radius: 8px; margin: 8px 0; font-size: 13px; display: none; }
+    .status.loading { display: block; background: #1a1a3a; color: #888; }
+    .status.done { display: block; background: #1a3a1a; color: #4ade80; }
+    .status.error { display: block; background: #3a1a1a; color: #f87171; }
+    .dl-link { display: block; padding: 12px; background: #1a3a1a; border-radius: 8px; color: #4ade80; text-decoration: none; font-size: 15px; margin-top: 8px; text-align: center; }
+    .tip { background: #1a1a2e; border-radius: 8px; padding: 10px; margin-top: 12px; font-size: 12px; color: #777; line-height: 1.6; }
+    .tip code { background: #222; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+    .nav { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .nav a { color: #888; text-decoration: none; font-size: 13px; padding: 4px 10px; border-radius: 16px; border: 1px solid #333; }
+    .nav a.act { color: #3b82f6; border-color: #3b82f6; }
+    #autoDetect { font-size: 12px; color: #888; padding: 8px; margin-bottom: 8px; }
+    #autoDetect .found { color: #4ade80; }
+    #autoDetect .none { color: #888; }
+    @media (prefers-color-scheme: light) {
+      body { background: #f5f5f5; color: #222; }
+      .card { background: #fff; }
+      .bar input, .url-input { background: #fff; border-color: #ddd; color: #222; }
+      .track-item { background: #eee; }
+      .track-item.act { background: #dbeafe; border-color: #3b82f6; }
+      .nav a { border-color: #ddd; color: #666; }
+      .nav a.act { color: #3b82f6; border-color: #3b82f6; }
+      .tip { background: #e8e8f0; color: #555; }
+      .tip code { background: #ddd; }
+      .status.loading { background: #e8e8f0; }
+      .status.done { background: #dcfce7; }
+      .status.error { background: #fee2e2; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🔧 字幕提取</h1>
+  <div class="sub">
+    <a href="/">← 返回字幕浏览器</a>
+  </div>
+
+  <div class="nav">
+    <a href="#smb" class="act" id="tabSMB" onclick="switchTab('smb')">📁 本地视频</a>
+    <a href="#url" id="tabURL" onclick="switchTab('url')">🔗 粘贴 URL</a>
+  </div>
+
+  <!-- SMB 模式 -->
+  <div class="card" id="panelSMB">
+    <h2>📁 从 SMB 本地视频提取</h2>
+    <div class="bar">
+      <input type="text" id="smbSearch" placeholder="搜索剧名…" oninput="searchSMB()">
+    </div>
+    <div id="smbResults"></div>
+    <div id="smbTracks" class="tracks"></div>
+    <div id="smbStatus" class="status"></div>
+    <button class="btn green" id="smbExtractBtn" style="display:none" onclick="startExtract('smb')">🚀 提取并翻译</button>
+  </div>
+
+  <!-- URL 模式 -->
+  <div class="card" id="panelURL" style="display:none">
+    <h2>🔗 从视频 URL 提取</h2>
+    <p style="font-size:12px;color:#666;margin-bottom:8px">粘贴视频文件的直链 URL（支持 Real-Debrid 等 HTTP 链接）</p>
+    <input class="url-input" type="text" id="videoUrl" placeholder="https://real-debrid.com/... 或 /Volumes/Media/TV/xxx.mkv" value="">
+    <div id="urlTracks" class="tracks"></div>
+    <div id="urlStatus" class="status"></div>
+    <button class="btn orange" id="urlProbeBtn" onclick="probeUrl()">🔍 探测字幕轨道</button>
+    <button class="btn green" id="urlExtractBtn" style="display:none" onclick="startExtract('url')">🚀 提取并翻译</button>
+  </div>
+
+  <div id="autoDetect">
+    <span id="detectMsg">正在检测当前 Stremio 流…</span>
+  </div>
+
+  <div class="tip">
+    <strong>💡 说明</strong><br>
+    <b>本地视频：</b>从 /Volumes/Media/ 选择文件。提取较慢（SMB 读取 30-60 秒）。<br>
+    <b>URL 模式：</b>粘贴 Debrid 直链即可快速提取（HTTP range request）。<br>
+    提取后自动翻译为中英双语字幕，存入 ~/.stremio-subs/。<br>
+    完成后前往 <a href="/" style="color:#3b82f6">字幕浏览器</a> 下载。
+  </div>
+</div>
+
+<script>
+let selectedVideo = null;
+let selectedURL = null;
+let selectedTrack = 0;
+
+function switchTab(tab) {
+  document.getElementById('tabSMB').className = tab === 'smb' ? 'act' : '';
+  document.getElementById('tabURL').className = tab === 'url' ? 'act' : '';
+  document.getElementById('panelSMB').style.display = tab === 'smb' ? 'block' : 'none';
+  document.getElementById('panelURL').style.display = tab === 'url' ? 'block' : 'none';
+}
+
+// 自动检测当前 Stremio 流
+async function checkStremioStream() {
+  try {
+    const r = await fetch('/api/search-videos');
+    const d = await r.json();
+    if (d.currentStream && Object.keys(d.currentStream).length > 0) {
+      document.getElementById('detectMsg').innerHTML = '<span class="found">✅ 检测到活跃流，尝试提取…</span>';
+      // 尝试获取流详情
+    } else {
+      document.getElementById('detectMsg').innerHTML = '<span class="none">ℹ️ 未检测到活跃 Stremio 流（播放时才显示）</span>';
+    }
+  } catch(e) {
+    document.getElementById('detectMsg').innerHTML = '<span class="none">ℹ️ 无法检测 Stremio 状态</span>';
+  }
+}
+
+// 搜索 SMB 视频
+let smbSearchTimer;
+function searchSMB() {
+  clearTimeout(smbSearchTimer);
+  const q = document.getElementById('smbSearch').value;
+  smbSearchTimer = setTimeout(async () => {
+    const r = await fetch('/api/search-videos' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    const d = await r.json();
+    const el = document.getElementById('smbResults');
+    if (!d.videos || !d.videos.length) {
+      el.innerHTML = '<div style="color:#666;font-size:13px;padding:8px 0">没有找到匹配的视频文件</div>';
+      return;
+    }
+    el.innerHTML = d.videos.map(v => {
+      const sz = v.size > 1073741824 ? (v.size/1073741824).toFixed(1)+'GB' : v.size > 1048576 ? (v.size/1048576).toFixed(0)+'MB' : (v.size/1024).toFixed(0)+'KB';
+      return '<div class="vitem" onclick="selectSMB(\\'' + v.path.replace(/\\/g, '\\\\') + '\\', \\'' + v.name.replace(/\\'/g, '\\\\\\'') + '\\')" style="cursor:pointer">' +
+        '<span class="vname">📺 ' + v.name + '</span>' +
+        '<span class="vsize">' + sz + '</span></div>';
+    }).join('');
+  }, 300);
+}
+
+function selectSMB(path, name) {
+  selectedVideo = path;
+  selectedTrack = 0;
+  document.getElementById('smbTracks').innerHTML = '正在探测字幕轨道…';
+  document.getElementById('smbExtractBtn').style.display = 'none';
+  document.getElementById('smbStatus').className = 'status loading';
+  document.getElementById('smbStatus').textContent = '正在探测 ' + name + ' 的字幕轨道…';
+  document.getElementById('smbStatus').style.display = 'block';
+
+  fetch('/api/probe?url=' + encodeURIComponent(path)).then(r => r.json()).then(d => {
+    if (d.error) {
+      document.getElementById('smbStatus').className = 'status error';
+      document.getElementById('smbStatus').textContent = '探测失败: ' + d.error;
+      return;
+    }
+    const tracks = d.tracks || [];
+    if (!tracks.length) {
+      document.getElementById('smbTracks').innerHTML = '<span style="color:#f59e0b;font-size:13px">⚠️ 未检测到字幕轨道</span>';
+      document.getElementById('smbStatus').style.display = 'none';
+      return;
+    }
+    const html = tracks.map((t, i) => {
+      const lang = t.tags && t.tags.language ? t.tags.language : 'unknown';
+      return '<span class="track-item" id="smbTrack' + i + '" onclick="selectTrack(' + i + ', \\'smb\\')">🎬 轨道 ' + i + ' (' + lang + ')</span>';
+    }).join('');
+    document.getElementById('smbTracks').innerHTML = html;
+    // 默认选中第一个
+    selectTrack(0, 'smb');
+    document.getElementById('smbExtractBtn').style.display = 'inline-block';
+    document.getElementById('smbStatus').style.display = 'none';
+  }).catch(e => {
+    document.getElementById('smbStatus').className = 'status error';
+    document.getElementById('smbStatus').textContent = '请求失败: ' + e.message;
+  });
+}
+
+function selectTrack(idx, mode) {
+  selectedTrack = idx;
+  const prefix = mode === 'smb' ? 'smbTrack' : 'urlTrack';
+  document.querySelectorAll('[id^="' + prefix + '"]').forEach(el => el.className = 'track-item');
+  const el = document.getElementById(prefix + idx);
+  if (el) el.className = 'track-item act';
+}
+
+// URL 模式探测
+function probeUrl() {
+  const url = document.getElementById('videoUrl').value.trim();
+  if (!url) { alert('请输入视频 URL'); return; }
+  selectedURL = url;
+  selectedTrack = 0;
+  document.getElementById('urlTracks').innerHTML = '正在探测…';
+  document.getElementById('urlExtractBtn').style.display = 'none';
+  document.getElementById('urlStatus').className = 'status loading';
+  document.getElementById('urlStatus').textContent = '正在探测字幕轨道…';
+  document.getElementById('urlStatus').style.display = 'block';
+
+  fetch('/api/probe?url=' + encodeURIComponent(url)).then(r => r.json()).then(d => {
+    if (d.error) {
+      document.getElementById('urlStatus').className = 'status error';
+      document.getElementById('urlStatus').textContent = '探测失败: ' + d.error;
+      return;
+    }
+    const tracks = d.tracks || [];
+    if (!tracks.length) {
+      document.getElementById('urlTracks').innerHTML = '<span style="color:#f59e0b;font-size:13px">⚠️ 未检测到字幕轨道</span>';
+      document.getElementById('urlStatus').style.display = 'none';
+      return;
+    }
+    const html = tracks.map((t, i) => {
+      const lang = t.tags && t.tags.language ? t.tags.language : 'unknown';
+      return '<span class="track-item" id="urlTrack' + i + '" onclick="selectTrack(' + i + ', \\'url\\')">🎬 轨道 ' + i + ' (' + lang + ')</span>';
+    }).join('');
+    document.getElementById('urlTracks').innerHTML = html;
+    selectTrack(0, 'url');
+    document.getElementById('urlExtractBtn').style.display = 'inline-block';
+    document.getElementById('urlStatus').style.display = 'none';
+  }).catch(e => {
+    document.getElementById('urlStatus').className = 'status error';
+    document.getElementById('urlStatus').textContent = '请求失败: ' + e.message;
+  });
+}
+
+// 开始提取
+function startExtract(mode) {
+  const url = mode === 'smb' ? selectedVideo : selectedURL;
+  if (!url) { alert('请先选择视频'); return; }
+  const statusEl = document.getElementById(mode + 'Status');
+  const btnEl = document.getElementById(mode + 'ExtractBtn');
+
+  statusEl.className = 'status loading';
+  statusEl.textContent = '正在提取字幕（可能需要 30-60 秒）…';
+  statusEl.style.display = 'block';
+  btnEl.disabled = true;
+
+  const params = new URLSearchParams({ url, track: selectedTrack });
+  fetch('/api/extract?' + params).then(r => r.json()).then(d => {
+    btnEl.disabled = false;
+    if (d.error) {
+      statusEl.className = 'status error';
+      statusEl.textContent = '❌ ' + d.error;
+      return;
+    }
+    statusEl.className = 'status done';
+    statusEl.innerHTML = '✅ 字幕就绪！<a href="' + d.subtitleUrl + '" class="dl-link" download>' +
+      (d.filename || '下载双语字幕') + '</a>';
+  }).catch(e => {
+    btnEl.disabled = false;
+    statusEl.className = 'status error';
+    statusEl.textContent = '❌ 请求失败: ' + e.message;
+  });
+}
+
+// 启动自动检测
+checkStremioStream();
+</script>
+</body>
+</html>`;
+}
+
+// ======================== 视频字幕提取工具 ========================
+
+const FFMPEG = '/usr/local/bin/ffmpeg';
+const FFPROBE = '/usr/local/bin/ffprobe';
+const NODE_BIN = '/Users/vickiepo/.nvm/versions/node/v22.22.2/bin/node';
+const BILINGUAL_TOOL = path.join(__dirname, 'tools', 'srt-bilingual.js');
+
+/** 用 ffprobe 探测视频的字幕轨道 */
+function probeSubtitleTracks(videoPath) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(FFPROBE, [
+      '-v', 'error',
+      '-select_streams', 's',
+      '-show_entries', 'stream=index:stream_tags=language,title:stream_tags=language',
+      '-of', 'json',
+      videoPath
+    ]);
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => stdout += d);
+    proc.stderr.on('data', d => stderr += d);
+    proc.on('close', code => {
+      if (code === 0) {
+        try { resolve(JSON.parse(stdout).streams || []); }
+        catch(e) { reject(new Error('解析 ffprobe 输出失败: ' + e.message)); }
+      } else {
+        reject(new Error('ffprobe 退出码 ' + code + ': ' + stderr.slice(-300)));
+      }
+    });
+    proc.on('error', e => reject(new Error('ffprobe 无法启动: ' + e.message)));
+  });
+}
+
+/** 从视频提取指定轨道的字幕为 SRT */
+function extractSubtitleTrack(videoPath, trackIndex) {
+  return new Promise(async (resolve, reject) => {
+    const outFile = `/tmp/sub_extract_${Date.now()}.srt`;
+    // 对 SMB 文件路径，先 dd 到本地再提取（SMB 顺序读取太慢）
+    // 对 HTTP URL，直接 ffmpeg（HTTP range request 快）
+    const isLocalFile = videoPath.startsWith('/') || videoPath.startsWith('file://');
+    const srcPath = videoPath;
+
+    if (isLocalFile) {
+      log(`  → 本地文件，先复制到 /tmp...`);
+      try {
+        await new Promise((ok, fail) => {
+          const dd = spawn('dd', ['if=' + videoPath.replace(/^file:\/\//, ''), 'of=' + outFile + '.input', 'bs=1M']);
+          let err = '';
+          dd.stderr.on('data', d => err += d);
+          dd.on('close', c => c === 0 ? ok() : fail(new Error('dd 退出码 ' + c)));
+          dd.on('error', e => fail(e));
+        });
+        log(`  → 复制完成，开始提取字幕...`);
+        const st = fs.statSync(outFile + '.input');
+        log(`  → 文件大小: ${(st.size / 1048576).toFixed(1)}MB`);
+        await runFFmpeg(outFile + '.input', trackIndex, outFile);
+        try { fs.unlinkSync(outFile + '.input'); } catch {}
+        if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) return resolve(outFile);
+        return reject(new Error('提取后文件为空'));
+      } catch (e) {
+        // dd 失败时尝试直接 ffmpeg
+        log(`  → dd 失败(${e.message})，尝试直接 ffmpeg...`);
+        try { fs.unlinkSync(outFile + '.input'); } catch {}
+      }
+    }
+
+    // 直接 ffmpeg
+    try {
+      await runFFmpeg(srcPath, trackIndex, outFile);
+      if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) return resolve(outFile);
+      reject(new Error('提取后文件为空'));
+    } catch (e) {
+      reject(e);
+    }
+
+    function runFFmpeg(input, track, output) {
+      return new Promise((ok, fail) => {
+        const args = ['-y', '-i', input, '-map', `0:${track}`, output];
+        const proc = spawn(FFMPEG, args);
+        let stderr = '';
+        proc.stderr.on('data', d => stderr += d);
+        proc.on('close', code => {
+          if (code === 0) return ok();
+          fail(new Error('ffmpeg 退出码 ' + code + ': ' + stderr.slice(-300)));
+        });
+        proc.on('error', e => fail(new Error('ffmpeg 启动失败: ' + e.message)));
+      });
+    }
+  });
+}
+
+/** 翻译英文字幕为双语 */
+function translateToBilingual(srtFile, outputPath) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(BILINGUAL_TOOL)) {
+      return reject(new Error('翻译工具不存在: ' + BILINGUAL_TOOL));
+    }
+    execFile(NODE_BIN, [BILINGUAL_TOOL, srtFile, '-o', outputPath], {
+      timeout: 120000,
+      maxBuffer: 10 * 1024 * 1024
+    }, (err, stdout, stderr) => {
+      if (err) return reject(new Error('翻译失败: ' + (stderr || err.message).slice(-200)));
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        resolve(outputPath);
+      } else {
+        reject(new Error('翻译后文件为空'));
+      }
+    });
+  });
+}
+
+/** 生成字幕文件名（从视频文件名推 SxxExx） */
+function genSubtitleFilename(videoName, trackLang, trackIndex) {
+  const base = path.basename(videoName, path.extname(videoName));
+  const se = base.match(/S(\d{2})E(\d{2})/i);
+  const lang = (trackLang || 'en').toLowerCase();
+  const langTag = lang === 'en' ? 'zh-en' : lang + '-zh';
+  if (se) {
+    return `TV/${base.replace(/\.[^/.]+$/, '')}.${langTag}.srt`;
+  }
+  return `Movies/${base}.${langTag}.srt`;
+}
+
+/** 扫描 SMB 视频目录，返回文件列表 */
+function scanSMBVideos(searchTerm) {
+  const dirs = ['/Volumes/Media/TV', '/Volumes/Media/Movies'];
+  const results = [];
+  const q = (searchTerm || '').toLowerCase();
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (e.name.startsWith('.')) continue;
+        if (e.isFile() && /\.(mkv|mp4|avi|mov|ts|m2ts)$/i.test(e.name)) {
+          if (q && !e.name.toLowerCase().includes(q)) continue;
+          const fp = path.join(dir, e.name);
+          const st = fs.statSync(fp);
+          results.push({ name: e.name, path: fp, dir: path.basename(dir), size: st.size });
+        }
+      }
+    } catch {}
+  }
+  results.sort((a, b) => a.name.localeCompare(b.name));
+  return results;
+}
+
 // ======================== HTTP 服务器 ========================
 
 const server = http.createServer((req, res) => {
@@ -293,8 +724,91 @@ const server = http.createServer((req, res) => {
       return res.end(renderBrowserPage(filtered, query, typeFilter, totalCount));
     }
 
-    // ---- 路由: 字幕查询 ----
-    // Stremio 实际发过来的格式:
+    // ---- 路由: 字幕提取工具页面 ----
+    if (pathname === '/extract') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(renderExtractPage());
+    }
+
+    // ---- API: 搜索 SMB 视频 ----
+    if (pathname === '/api/search-videos') {
+      const q = (parsed.query.q || '').trim();
+      const results = scanSMBVideos(q);
+      // 也尝试探测当前 Stremio 流
+      let currentStream = null;
+      try {
+        const s = http.get('http://localhost:11470/stats.json', { timeout: 3000 }, r => {
+          let d = '';
+          r.on('data', c => d += c);
+          r.on('end', () => {
+            try { const j = JSON.parse(d); if (Object.keys(j).length) currentStream = j; } catch {}
+          });
+        });
+        s.on('error', () => {});
+        s.end();
+      } catch {}
+      return serveJSON(res, { videos: results.slice(0, 200), currentStream });
+    }
+
+    // ---- API: 探测视频字幕轨道 ----
+    if (pathname === '/api/probe') {
+      const videoUrl = parsed.query.url || '';
+      if (!videoUrl) { res.writeHead(400); return res.end(JSON.stringify({ error: '缺少 url 参数' })); }
+
+      probeSubtitleTracks(videoUrl).then(tracks => {
+        serveJSON(res, { tracks });
+      }).catch(err => {
+        serveJSON(res, { error: err.message, tracks: [] });
+      });
+      return;
+    }
+
+    // ---- API: 提取 + 翻译字幕 ----
+    if (pathname === '/api/extract') {
+      const videoUrl = parsed.query.url || '';
+      const trackIdx = parseInt(parsed.query.track || '0', 10);
+      const trackLang = parsed.query.lang || '';
+      if (!videoUrl) { res.writeHead(400); return res.end(JSON.stringify({ error: '缺少 url 参数' })); }
+
+      // 异步处理，用 IIFE 包装
+      (async () => {
+        const timeout = setTimeout(() => {
+          try { res.writeHead(504); res.end(JSON.stringify({ error: '处理超时' })); } catch {}
+        }, 120000);
+        try {
+          log(`提取字幕: track=${trackIdx} url=${videoUrl.slice(0, 80)}...`);
+          const srtFile = await extractSubtitleTrack(videoUrl, trackIdx);
+          log(`提取完成: ${srtFile} (${fs.statSync(srtFile).size} bytes)`);
+
+          const videoName = decodeURIComponent(videoUrl.split('/').pop() || 'video').replace(/\.[^/.]+$/, '');
+          const subFilename = genSubtitleFilename(videoName, trackLang, trackIdx);
+          const outputPath = path.join(SUBS_DIR, subFilename);
+          const outputDir = path.dirname(outputPath);
+          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+          log(`开始翻译...`);
+          try {
+            await translateToBilingual(srtFile, outputPath);
+            log(`翻译完成: ${outputPath}`);
+          } catch (e) {
+            log(`翻译失败(${e.message})，保留原文`);
+            fs.copyFileSync(srtFile, outputPath);
+          }
+          try { fs.unlinkSync(srtFile); } catch {}
+
+          const encodedPath = subFilename.split(path.sep).map(s => encodeURIComponent(s)).join('/');
+          const dlUrl = `/subs/${encodedPath}`;
+          clearTimeout(timeout);
+          return serveJSON(res, { success: true, subtitleUrl: dlUrl, filename: path.basename(outputPath) });
+        } catch (e) {
+          clearTimeout(timeout);
+          log(`提取失败: ${e.message}`);
+          res.writeHead(500);
+          return res.end(JSON.stringify({ error: e.message }));
+        }
+      })();
+      return;
+    }
     //   /subtitles/series/tt7587890:8:5/filename=xxx.mkv.json         ← mediaId 里带 :season:episode
     //   /subtitles/series/tt1234567/1-2.json                           ← extra 带 season-episode
     //   /subtitles/movie/tt1234567.json
