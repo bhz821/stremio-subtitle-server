@@ -489,9 +489,8 @@ function downloadOS() {
 
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
-    var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
-    window._lastDlFile = d.filename || '';
-    st.innerHTML = dlLink;
+    st.innerHTML = '<div style="text-align:center;padding:8px;font-size:14px;color:#4ade80">\u2705 \u5df2\u4fdd\u5b58\u5230\u5b57\u5e55\u5e93: ' + (d.filename || '\u4e0b\u8f7d\u6210\u529f') + '</div>';
+    document.getElementById('rdOsTranslateBtn').disabled = false;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
 function translateOS() {
