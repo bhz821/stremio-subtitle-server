@@ -484,7 +484,7 @@ function downloadOS() {
   st.className = 'status loading';
   st.textContent = '下载...';
   st.style.display = 'block';
-  var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9一-鿿]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
+  var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9一-鿿]/g, '.').replace(/\\.+/g, '.').replace(/^\\.|\\.$/g, '') + '.srt';
   fetch('/api/download-subtitle?file_id=' + selectedOSFileId + '&filename=' + encodeURIComponent(qName)).then(function(r) { return r.json(); }).then(function(d) {
 
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
@@ -495,7 +495,7 @@ function downloadOS() {
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
 function translateOS() {
-  var fileName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
+  var fileName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\\.+/g, '.').replace(/^\\.|\\.$/g, '') + '.srt';
   if (!fileName || fileName === '.srt') { alert('no file'); return; }
   var st = document.getElementById('rdOsStatus');
   st.className = 'status loading';
