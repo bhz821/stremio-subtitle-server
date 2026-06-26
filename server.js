@@ -735,6 +735,9 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('manualTranslateBtn') && document.getElementById('manualTranslateBtn').addEventListener('click', manualTranslate);
 });
 // Also bind immediately in case DOMContentLoaded already fired
+try {
+  document.getElementById('existingSubSearchBtn').onclick = function() { searchExistingSubs(); };
+} catch(e) { console.log('bind error:', e); }
 if (document.getElementById('existingSubSearchBtn')) {
   document.getElementById('existingSubSearchBtn').onclick = searchExistingSubs;
 }
