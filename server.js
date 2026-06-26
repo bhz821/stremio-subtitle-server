@@ -405,13 +405,13 @@ async function loadRD() {
       div.innerHTML = '<span class="rbadge">RD</span><span class="rname">' + (v.filename || '?') + '</span><span class="rsize">' + sz + '</span>';
       div.addEventListener('click', function() {
         var fn = v.filename || '';
-        var m = fn.match(/S(\d{2})E(\d{2})/i);
+        var m = fn.match(/S(\\d{2})E(\\d{2})/i);
         var q;
         if (m) {
-          var show = fn.replace(/[.\s-]*S\d{2}E\d{2}.*$/i, '').replace(/[.\s]/g, ' ');
+          var show = fn.replace(/[.\\s-]*S\\d{2}E\\d{2}.*$/i, '').replace(/[.\\s]/g, ' ');
           q = show + ' S' + m[1] + 'E' + m[2];
         } else {
-          q = fn.replace(/\.[^/.]+$/, '').replace(/[.\s_]/g, ' ');
+          q = fn.replace(/\.[^/.]+$/, '').replace(/[.\\s_]/g, ' ');
         }
         document.getElementById('rdImdbId').value = q;
         searchOS();
@@ -457,7 +457,7 @@ function searchOS() {
   st.style.display = 'block';
   r.innerHTML = '';
   document.getElementById('rdOsDownloadBtn').style.display = 'none';
-  var url = q.match(/^tt\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
+  var url = q.match(/^tt\\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
   fetch(url).then(function(r2) { return r2.json(); }).then(function(d) {
     var subs = d.subtitles || [];
     if (!subs.length) { st.className = 'status error'; st.textContent = '没找到字幕'; return; }
@@ -500,7 +500,7 @@ function translateOS(fileName) {
   st.textContent = '\u23F3 \u7FFB\u8BD1\u4E2D\uFF0815-30\u79D2\uFF09...';
   st.style.display = 'block';
   fetch('/api/translate-subtitle?file=' + encodeURIComponent(fileName)).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
+    if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error + ' \u91CD\u8BD5\u8BF7\u518D\u70B9\u7FFB\u8BD1'; return; }
     st.className = 'status done';
     st.innerHTML = '\u2705 \u53CC\u8BED\u5B57\u5E55\u5C31\u7EEA\uFF01<a href="' + d.subtitleUrl + '" class="dl-link" download>\u2B07 ' + (d.filename || '\u4E0B\u8F7D') + '</a>';
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
@@ -785,7 +785,7 @@ function translateToBilingual(srtFile, outputPath) {
 /** 生成字幕文件名（从视频文件名推 SxxExx） */
 function genSubtitleFilename(videoName, trackLang, trackIndex) {
   const base = path.basename(videoName, path.extname(videoName));
-  const se = base.match(/S(\d{2})E(\d{2})/i);
+  const se = base.match(/S(\\d{2})E(\\d{2})/i);
   const lang = (trackLang || 'en').toLowerCase();
   const langTag = lang === 'en' ? 'zh-en' : lang + '-zh';
   if (se) {
@@ -980,7 +980,7 @@ const server = http.createServer((req, res) => {
         const fname = path.basename(fp);
         const relPath = path.relative(SUBS_DIR, fp);
         const encodedRel = relPath.split(path.sep).map(s => encodeURIComponent(s)).join('/');
-        const se = fname.match(/S(\d{2})E(\d{2})/i);
+        const se = fname.match(/S(\\d{2})E(\\d{2})/i);
         const lang = guessLang(fname);
         const ext = path.extname(fname).toLowerCase();
         const type = se ? 'series' : 'movie';
@@ -1227,7 +1227,7 @@ if (pathname === '/api/translate-subtitle') {
 
       // 3) 从 extra 的 filename 中搜 SxxExx
       if (season == null) {
-        const fileSeMatch = extra.match(/S(\d{2})E(\d{2})/i);
+        const fileSeMatch = extra.match(/S(\\d{2})E(\\d{2})/i);
         if (fileSeMatch) {
           season = parseInt(fileSeMatch[1]);
           episode = parseInt(fileSeMatch[2]);
@@ -1285,7 +1285,7 @@ if (pathname === '/api/translate-subtitle') {
         }
       } else {
         matchingFiles = scanSubFiles(SUBS_DIR);
-        const seInName = decodedId.match(/S(\d{2})E(\d{2})/i);
+        const seInName = decodedId.match(/S(\\d{2})E(\\d{2})/i);
         if (seInName) {
           const seStr = 'S' + seInName[1] + 'E' + seInName[2];
           matchingFiles = matchingFiles.filter(f =>
