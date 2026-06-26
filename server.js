@@ -404,6 +404,20 @@ async function loadRD() {
       div.className = 'rd-item';
       div.innerHTML = '<span class="rbadge">RD</span><span class="rname">' + (v.filename || '?') + '</span><span class="rsize">' + sz + '</span>';
       div.addEventListener('click', function() { selectRD(v.download, v.filename); });
+      div.addEventListener('dblclick', function() {
+        var fn = v.filename || '';
+        var m = fn.match(/S(\d{2})E(\d{2})/i);
+        var q;
+        if (m) {
+          var show = fn.replace(/[.\s-]*S\d{2}E\d{2}.*$/i, '').replace(/[.\s]/g, ' ');
+          q = show + ' S' + m[1] + 'E' + m[2];
+        } else {
+          q = fn.replace(/\.[^/.]+$/, '').replace(/[.\s_]/g, ' ');
+        }
+        document.getElementById('rdImdbId').value = q;
+        switchTab('rd');
+        searchOS();
+      });
       el.appendChild(div);
     });
   } catch(e) {
@@ -739,7 +753,7 @@ function translateToBilingual(srtFile, outputPath) {
       return reject(new Error('翻译工具不存在: ' + BILINGUAL_TOOL));
     }
     execFile(NODE_BIN, [BILINGUAL_TOOL, srtFile, '-o', outputPath], {
-      timeout: 120000,
+      timeout: 300000,
       maxBuffer: 10 * 1024 * 1024
     }, (err, stdout, stderr) => {
       if (err) return reject(new Error('翻译失败: ' + (stderr || err.message).slice(-200)));
@@ -1027,6 +1041,13 @@ const server = http.createServer((req, res) => {
               if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
               var outFile = path.join(outDir, 'os_' + fileId + '.srt');
               fs.writeFileSync(outFile, Buffer.concat(chunks));
+              // 后台翻译
+              var biFile = path.join(outDir, 'os_' + fileId + '.zh-en.srt');
+              translateToBilingual(outFile, biFile).then(function() {
+                log('OS 翻译完成: ' + biFile);
+              }).catch(function(e) {
+                log('OS 翻译失败: ' + e.message);
+              });
               serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.srt', filename: 'os_' + fileId + '.srt' });
             });
           });
@@ -1059,7 +1080,7 @@ const server = http.createServer((req, res) => {
       (async () => {
         const timeout = setTimeout(() => {
           try { res.writeHead(504); res.end(JSON.stringify({ error: '处理超时' })); } catch {}
-        }, 120000);
+        }, 300000);
         try {
           log(`提取字幕: track=${trackIdx} url=${videoUrl.slice(0, 80)}...`);
           const srtFile = await extractSubtitleTrack(videoUrl, trackIdx);
