@@ -448,7 +448,7 @@ function selectRD(url, name) {
 }
 
 // ===== OS 搜索 =====
-var selectedOSFileId = null; var osResultsFileIds = [];
+var selectedOSFileId = null; var selectedOSFilename = null; var osResultsFileIds = [];
 function searchOS() {
   var q = document.getElementById('rdImdbId').value.trim();
   if (!q) { alert('输入片名或 IMDB ID'); return; }
@@ -467,11 +467,12 @@ function searchOS() {
     r.innerHTML = subs.map(function(s, i) {
       return '<div class="rd-item" ><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + '</span></div>';
     }).join('');
-    osResultsFileIds = subs.map(function(s) { return s.file_id; }); selectOS(0, subs[0].file_id);
+    osResultsFileIds = subs.map(function(s) { return s.file_id; }); window.osResultsSubs = subs; selectOS(0, subs[0].file_id);
   }).catch(function(e) { st.className = 'status error'; st.textContent = '搜索失败: ' + e.message; });
 }
 function selectOS(idx, fileId) {
   selectedOSFileId = fileId;
+  if (typeof osResultsSubs !== 'undefined' && osResultsSubs[idx]) selectedOSFilename = osResultsSubs[idx].filename || '';
   var items = document.querySelectorAll('#rdOsResults .rd-item');
   for (var i = 0; i < items.length; i++) items[i].style.background = i === idx ? '#1a3a1a' : '';
   document.getElementById('rdOsDownloadBtn').style.display = 'inline-block';
@@ -1042,7 +1043,12 @@ const server = http.createServer((req, res) => {
     // ---- API: OS 下载 ----
     if (pathname === '/api/download-subtitle') {
       var fileId = parseInt(parsed.query.file_id || '0', 10);
+      var fileName = parsed.query.filename || '';
       if (!fileId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file_id' })); }
+      // 清理文件名，保留 SxxExx 和剧名
+      var cleanName = fileName.replace(/[^a-zA-Z0-9.\- \[\]]/g, '').replace(/\s+/g, ' ').trim();
+      if (!cleanName || cleanName.length < 5) cleanName = 'os_' + fileId + '.srt';
+      if (!cleanName.endsWith('.srt')) cleanName = cleanName.replace(/\.[^/.]+$/, '') + '.srt';
       (async function() {
         try {
           var dlUrl = await osDownload(fileId);
@@ -1053,12 +1059,32 @@ const server = http.createServer((req, res) => {
             r.on('end', function() {
               var outDir = path.join(SUBS_DIR, 'TV');
               if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-              var outFile = path.join(outDir, 'os_' + fileId + '.srt');
+              var outFile = path.join(outDir, cleanName);
               fs.writeFileSync(outFile, Buffer.concat(chunks));
               log('OS 下载完成: ' + outFile);
-              serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.srt', filename: 'os_' + fileId + '.srt', fileId: fileId });
+              var encodedName = encodeURIComponent(cleanName);
+              serveJSON(res, { success: true, subtitleUrl: '/subs/TV/' + encodedName, filename: cleanName, fileId: fileId });
             });
           });
+        } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+      })();
+      return;
+    }
+
+    // ---- API: OS 翻译 ----
+    if (pathname === '/api/translate-subtitle') {
+      var fileParam = parsed.query.file || '';
+      if (!fileParam) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file' })); }
+      (async function() {
+        try {
+          var inFile = path.join(SUBS_DIR, 'TV', fileParam);
+          if (!fs.existsSync(inFile)) { res.writeHead(404); return res.end(JSON.stringify({ error: 'file not found: ' + fileParam })); }
+          var ext = path.extname(fileParam);
+          var base = path.basename(fileParam, ext);
+          var outFile = path.join(SUBS_DIR, 'TV', base + '.zh-en.srt');
+          await translateToBilingual(inFile, outFile);
+          log('翻译完成: ' + outFile);
+          serveJSON(res, { success: true, subtitleUrl: '/subs/TV/' + encodeURIComponent(base + '.zh-en.srt'), filename: base + '.zh-en.srt' });
         } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
       })();
       return;
