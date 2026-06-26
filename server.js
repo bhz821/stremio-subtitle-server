@@ -318,7 +318,7 @@ function renderExtractPage() {
     <div id="rdOsStatus" class="status"></div>
     <div id="rdOsActions" style="display:none;margin-top:8px;gap:8px">
       <button class="btn green" onclick="downloadOS()" style="flex:1">⬇ 下载</button>
-      <button class="btn orange" onclick="translateOS()" style="flex:1" id="rdOsTranslateBtn" disabled>🌐 翻译</button>
+      <button class="btn orange" onclick="translateOS()" style="flex:1" id="rdOsTranslateBtn">🌐 翻译</button>
     </div>
   </div>
 
