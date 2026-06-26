@@ -486,14 +486,13 @@ function downloadOS() {
   st.textContent = '下载+翻译...';
   st.style.display = 'block';
   btn.disabled = true;
-  var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
+  var qName = (document.getElementById('rdImdbId').value.trim() || 'subtitle').replace(/[^a-zA-Z0-9一-鿿]/g, '.').replace(/\.+/g, '.').replace(/^\.|\.$/g, '') + '.srt';
   fetch('/api/download-subtitle?file_id=' + selectedOSFileId + '&filename=' + encodeURIComponent(qName)).then(function(r) { return r.json(); }).then(function(d) {
     btn.disabled = false;
     if (d.error) { st.className = 'status error'; st.textContent = '\u274C ' + d.error; return; }
     st.className = 'status done';
     var dlLink = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载') + '</a>';
     window._lastDlFile = d.filename || '';
-    var trBtn = '<button class="btn green" onclick="translateOS(window._lastDlFile)" style="margin-top:8px">🌐 翻译为双语</button>';
     st.innerHTML = dlLink + trBtn;
   }).catch(function(e) { btn.disabled = false; st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
 
