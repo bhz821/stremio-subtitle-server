@@ -18,9 +18,12 @@ const { spawn, execFile } = require('child_process');
 const https = require('https');
 
 // ====== 访问日志 ======
+const LOG_FILE = '/tmp/stremio-subs.log';
 function log(msg) {
   const t = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  console.log(`[${t}] ${msg}`);
+  const line = `[${t}] ${msg}`;
+  console.log(line);
+  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
 }
 
 const SUBS_DIR = path.join(os.homedir(), '.stremio-subs');
@@ -130,6 +133,7 @@ function renderBrowserPage(items, query, typeFilter, totalCount) {
       <td class="name"><a href="${dlUrl}">${typeIcon} ${f.fname}</a></td>
       <td class="meta">${seInfo ? `<span class="se">${seInfo}</span> ` : ''}${langBadge} ${extBadge}</td>
       <td class="dl"><a href="${dlUrl}" download="${f.fname}" class="dl-btn" title="下载">⬇</a></td>
+      <td class="adj"><button class="adj-btn" onclick="adjSub('${f.relPath}',this)" title="调时间轴">⏱</button></td>
     </tr>`;
   }).join('\n');
 
@@ -173,6 +177,8 @@ function renderBrowserPage(items, query, typeFilter, totalCount) {
     .ext.ass { color: #f59e0b; }
     .se { color: #fbbf24; font-size: 11px; margin-right: 3px; }
     .dl-btn { text-decoration: none; font-size: 18px; color: #555; padding: 2px 4px; }
+    .adj-btn { background:none; border:none; color:#555; font-size:16px; cursor:pointer; padding:2px 4px; -webkit-appearance:none; }
+    .adj-btn:active { color:#f59e0b; }
     .dl-btn:active { color: #3b82f6; }
     .emp { text-align: center; padding: 40px 0; color: #555; font-size: 14px; }
     .tip { background: #1a1a2e; border-radius: 8px; padding: 10px 12px; margin-top: 16px; font-size: 12px; color: #777; line-height: 1.6; }
@@ -210,12 +216,109 @@ function renderBrowserPage(items, query, typeFilter, totalCount) {
 
   ${items.length > 0 ? `<table>${rows}</table>` : ''}
 
+  <div class="card" style="margin-top:16px">
+    <h2>📤 上传字幕调时间轴</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">从手机选 .srt 文件，填偏移量，下载调好的版本</p>
+    <div class="bar">
+      <input type="file" id="adjustFile" accept=".srt" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px">
+    </div>
+    <div class="bar">
+      <input type="number" id="adjustOffset" placeholder="偏移(ms): 1000=延后1秒, -500=提前0.5秒" value="0" style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none">
+      <button class="btn orange" onclick="uploadAdjust()" style="white-space:nowrap">⏱ 调时间</button>
+    </div>
+    <div id="adjustStatus" class="status"></div>
+  </div>
+
+  <div class="card" style="margin-top:8px">
+    <h2>🌐 上传英文字幕翻译双语</h2>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">选 .srt 英文字幕文件，翻译为中英双语</p>
+    <div class="bar">
+      <input type="file" id="translateFile" accept=".srt" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px">
+      <button class="btn green" onclick="uploadTranslate()" style="white-space:nowrap">🌐 翻译</button>
+    </div>
+    <div id="translateStatus" class="status"></div>
+  </div>
+
   <div class="tip">
     <strong>📱 iPhone 用法</strong><br>
     在 Stremio 网页版点"Play in VLC"后，切回 Safari 打开本页 → 搜剧名 → 点 ⬇ 下载字幕 → 在 VLC 中"添加字幕文件"
   </div>
   <div class="tagline">iMac · ~/.stremio-subs/ · ${totalCount} 个文件</div>
 </div>
+	<script>
+	function adjSub(filePath, btn) {
+	  var offset = prompt('偏移(ms): 正数=延后, 负数=提前, e.g. 1000=延后1秒, -500=提前0.5秒', '0');
+	  if (offset === null || offset === '') return;
+	  var ms = parseInt(offset);
+	  if (isNaN(ms) || ms === 0) { alert('请输入非零数字'); return; }
+	  btn.textContent = '...';
+	  btn.disabled = true;
+	  fetch('/api/adjust-timing?file=' + encodeURIComponent(filePath) + '&offset=' + ms).then(function(r){ return r.json(); }).then(function(d){
+	    btn.textContent = '⏱';
+	    btn.disabled = false;
+	    if (d.error) { alert('❌ ' + d.error); return; }
+	    btn.style.color = '#4ade80';
+	    var a = document.createElement('a');
+	    a.href = d.subtitleUrl;
+	    a.download = d.filename;
+	    document.body.appendChild(a);
+	    a.click();
+	    setTimeout(function(){ a.remove(); }, 1000);
+	  }).catch(function(e){
+	    btn.textContent = '⏱';
+	    btn.disabled = false;
+	    alert('❌ ' + e.message);
+	  });
+	}
+
+	function uploadAdjust() {
+	  var file = document.getElementById('adjustFile').files[0];
+	  if (!file) { alert('先选 .srt 文件'); return; }
+	  var offset = parseInt(document.getElementById('adjustOffset').value, 10);
+	  if (!offset) { alert('填偏移量（毫秒）'); return; }
+	  var st = document.getElementById('adjustStatus');
+	  st.className = 'status loading';
+	  st.textContent = '处理中...';
+	  st.style.display = 'block';
+	  var reader = new FileReader();
+	  reader.onload = function(e) {
+	    var content = e.target.result;
+	    fetch('/api/upload-adjust', {
+	      method: 'POST',
+	      headers: {'Content-Type': 'application/json'},
+	      body: JSON.stringify({ content: content, filename: file.name, offset: offset })
+	    }).then(function(r){ return r.json(); }).then(function(d){
+	      if (d.error) { st.className = 'status error'; st.textContent = '❌ ' + d.error; return; }
+	      st.className = 'status done';
+	      st.innerHTML = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载调好的字幕') + '</a>';
+	    }).catch(function(e){ st.className = 'status error'; st.textContent = '❌ ' + e.message; });
+	  };
+	  reader.readAsText(file, 'UTF-8');
+	}
+
+	function uploadTranslate() {
+	  var file = document.getElementById('translateFile').files[0];
+	  if (!file) { alert('先选 .srt 文件'); return; }
+	  var st = document.getElementById('translateStatus');
+	  st.className = 'status loading';
+	  st.textContent = '翻译中（15-30秒）...';
+	  st.style.display = 'block';
+	  var reader = new FileReader();
+	  reader.onload = function(e) {
+	    var content = e.target.result;
+	    fetch('/api/upload-translate', {
+	      method: 'POST',
+	      headers: {'Content-Type': 'application/json'},
+	      body: JSON.stringify({ content: content, filename: file.name })
+	    }).then(function(r){ return r.json(); }).then(function(d){
+	      if (d.error) { st.className = 'status error'; st.textContent = '❌ ' + d.error; return; }
+	      st.className = 'status done';
+	      st.innerHTML = '<a href="' + d.subtitleUrl + '" class="dl-link" download>' + (d.filename || '下载双语字幕') + '</a>';
+	    }).catch(function(e){ st.className = 'status error'; st.textContent = '❌ ' + e.message; });
+	  };
+	  reader.readAsText(file, 'UTF-8');
+	}
+	</script>
 </body>
 </html>`;
 }
@@ -312,6 +415,13 @@ function renderExtractPage() {
     <div style="font-size:13px;color:#888;margin-bottom:6px">或者从 OpenSubtitles 搜索：</div>
     <div class="bar">
       <input type="text" id="rdImdbId" placeholder="片名或 IMDB ID (tt32493765)" style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
+      <select id="osLang" style="padding:8px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none;cursor:pointer">
+        <option value="en">English</option>
+        <option value="zh-CN">中文</option>
+        <option value="en,zh-CN">EN+中文</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+      </select>
       <button class="btn orange" onclick="searchOS()" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
     </div>
     <div id="rdOsResults" style="margin-top:6px"></div>
@@ -328,7 +438,7 @@ function renderExtractPage() {
     <p style="font-size:12px;color:#888;margin-bottom:6px">搜索字幕库里已有的 .srt 文件，选一个翻译为双语</p>
     <div class="bar">
       <input type="text" id="existingSubSearch" placeholder="搜索剧名..." style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid #333;background:#222;color:#eee;font-size:13px;outline:none;-webkit-appearance:none">
-      <button class="btn orange" id="existingSubSearchBtn" style="padding:8px 12px;font-size:12px">🔍 搜索</button>
+      <button class="btn orange" id="existingSubSearchBtn" style="padding:8px 12px;font-size:12px" onclick="searchExistingSubs()">🔍 搜索</button>
     </div>
     <div id="existingSubResults" style="margin-top:6px"></div>
     <div id="existingSubStatus" class="status"></div>
@@ -474,13 +584,14 @@ function searchOS() {
   st.style.display = 'block';
   r.innerHTML = '';
     document.getElementById('rdOsActions').style.display = 'none';
-  var url = q.match(/^tt\\d+/) ? '/api/search-subtitles?imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?query=' + encodeURIComponent(q);
+  var lang = document.getElementById('osLang') ? document.getElementById('osLang').value : 'en';
+  var url = q.match(/^tt\\d+/) ? '/api/search-subtitles?languages=' + lang + '&imdb_id=' + encodeURIComponent(q) : '/api/search-subtitles?languages=' + lang + '&query=' + encodeURIComponent(q);
   fetch(url).then(function(r2) { return r2.json(); }).then(function(d) {
     var subs = d.subtitles || [];
     if (!subs.length) { st.className = 'status error'; st.textContent = '没找到字幕'; return; }
     st.style.display = 'none';
     r.innerHTML = subs.map(function(s, i) {
-      return '<div class="rd-item" ><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + '</span></div>';
+      return '<div class="rd-item" ><span class="rbadge">OS</span><span class="rname">' + (s.filename || '字幕 ' + (i+1)) + ' <span style="color:#888;font-size:11px">[' + s.lang + ']</span></span></div>';
     }).join('');
     osResultsFileIds = subs.map(function(s) { return s.file_id; }); window.osResultsSubs = subs; selectOS(0, subs[0].file_id);
   }).catch(function(e) { st.className = 'status error'; st.textContent = '搜索失败: ' + e.message; });
@@ -506,6 +617,7 @@ function downloadOS() {
     st.innerHTML = '<div style="text-align:center;padding:8px;font-size:14px;color:#4ade80">\u2705 \u5df2\u4fdd\u5b58\u5230\u5b57\u5e55\u5e93: ' + (d.filename || '\u4e0b\u8f7d\u6210\u529f') + '</div>';
     document.getElementById('rdOsTranslateBtn').disabled = false;
   }).catch(function(e) { st.className = 'status error'; st.textContent = '\u274C ' + e.message; });
+}
 
 function searchExistingSubs() { console.log('searchExistingSubs called');
   var q = document.getElementById('existingSubSearch').value.trim().toLowerCase();
@@ -707,8 +819,6 @@ function startExtract(mode) {
   });
 }
 
-}
-
 // 启动自动检测
 document.addEventListener('click', function(e) {
   var t = e.target;
@@ -734,13 +844,6 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('existingSubSearchBtn').addEventListener('click', searchExistingSubs);
   document.getElementById('manualTranslateBtn') && document.getElementById('manualTranslateBtn').addEventListener('click', manualTranslate);
 });
-// Also bind immediately in case DOMContentLoaded already fired
-try {
-  document.getElementById('existingSubSearchBtn').onclick = function() { searchExistingSubs(); };
-} catch(e) { console.log('bind error:', e); }
-if (document.getElementById('existingSubSearchBtn')) {
-  document.getElementById('existingSubSearchBtn').onclick = searchExistingSubs;
-}
 checkStremioStream(); switchTab('rd'); loadRD();
 </script>
 </body>
@@ -780,60 +883,80 @@ function probeSubtitleTracks(videoPath) {
 }
 
 /** 从视频提取指定轨道的字幕为 SRT */
-function extractSubtitleTrack(videoPath, trackIndex) {
+function extractSubtitleTrack(videoPath, subIdx, mkvTrackId) {
   return new Promise(async (resolve, reject) => {
     const outFile = `/tmp/sub_extract_${Date.now()}.srt`;
-    // 对 SMB 文件路径，先 dd 到本地再提取（SMB 顺序读取太慢）
-    // 对 HTTP URL，直接 ffmpeg（HTTP range request 快）
-    const isLocalFile = videoPath.startsWith('/') || videoPath.startsWith('file://');
-    const srcPath = videoPath;
-
-    if (isLocalFile) {
-      log(`  → 本地文件，先复制到 /tmp...`);
+    const isMKV = /\.mkv$/i.test(videoPath);
+    if (isMKV) {
+      // MKV 用 mkvextract（mkvTrackId = 文件全局流序号）
+      log(`  → MKV 文件，用 mkvextract 提取: track=${mkvTrackId}`);
       try {
-        await new Promise((ok, fail) => {
-          const dd = spawn('dd', ['if=' + videoPath.replace(/^file:\/\//, ''), 'of=' + outFile + '.input', 'bs=1M']);
-          let err = '';
-          dd.stderr.on('data', d => err += d);
-          dd.on('close', c => c === 0 ? ok() : fail(new Error('dd 退出码 ' + c)));
-          dd.on('error', e => fail(e));
-        });
-        log(`  → 复制完成，开始提取字幕...`);
-        const st = fs.statSync(outFile + '.input');
-        log(`  → 文件大小: ${(st.size / 1048576).toFixed(1)}MB`);
-        await runFFmpeg(outFile + '.input', trackIndex, outFile);
-        try { fs.unlinkSync(outFile + '.input'); } catch {}
+        await runMkvExtract(videoPath, mkvTrackId, outFile);
         if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) return resolve(outFile);
-        return reject(new Error('提取后文件为空'));
+        // mkvextract 没报错但文件空的 → 降级到 ffmpeg
+        log(`  → mkvextract 输出为空，降级到 ffmpeg`);
       } catch (e) {
-        // dd 失败时尝试直接 ffmpeg
-        log(`  → dd 失败(${e.message})，尝试直接 ffmpeg...`);
-        try { fs.unlinkSync(outFile + '.input'); } catch {}
+        log(`  → mkvextract 失败(${e.message})，降级到 ffmpeg`);
+        try { fs.unlinkSync(outFile); } catch {}
       }
     }
-
-    // 直接 ffmpeg
+    // 非 MKV 或 mkvextract 降级：用 ffmpeg（用 subIdx，即字幕列表序号）
+    log(`  → ffmpeg 提取字幕: sub=${subIdx}`);
     try {
-      await runFFmpeg(srcPath, trackIndex, outFile);
+      await runFFmpeg(videoPath, subIdx, outFile);
       if (fs.existsSync(outFile) && fs.statSync(outFile).size > 0) return resolve(outFile);
       reject(new Error('提取后文件为空'));
     } catch (e) {
+      try { fs.unlinkSync(outFile); } catch {}
       reject(e);
     }
+  });
+}
 
-    function runFFmpeg(input, track, output) {
-      return new Promise((ok, fail) => {
-        const args = ['-y', '-i', input, '-map', `0:${track}`, output];
-        const proc = spawn(FFMPEG, args);
-        let stderr = '';
-        proc.stderr.on('data', d => stderr += d);
-        proc.on('close', code => {
-          if (code === 0) return ok();
-          fail(new Error('ffmpeg 退出码 ' + code + ': ' + stderr.slice(-300)));
-        });
-        proc.on('error', e => fail(new Error('ffmpeg 启动失败: ' + e.message)));
-      });
-    }
+/** mkvextract 提取 MKV 字幕轨道 */
+const MKVEXTRACT = '/usr/local/bin/mkvextract';
+function runMkvExtract(input, track, output) {
+  return new Promise((ok, fail) => {
+    // mkvextract tracks input.mkv trackID:output.srt
+    // track 是 0-indexed 的字幕流序号，mkvextract 用 0-based track ID
+    log(`  mkvextract: ${MKVEXTRACT} tracks ${input} ${track}:${output}`);
+    const proc = spawn(MKVEXTRACT, ['tracks', input, `${track}:${output}`]);
+    let stderr = '';
+    proc.stderr.on('data', d => {
+      stderr += d;
+      log(`  mkvextract: ${d.toString().trim()}`);
+    });
+    proc.on('close', code => {
+      if (code === 0) return ok();
+      fail(new Error('mkvextract 退出码 ' + code + ': ' + stderr.slice(-200)));
+    });
+    proc.on('error', e => fail(new Error('mkvextract 启动失败: ' + e.message)));
+  });
+}
+
+/** ffmpeg 提取字幕轨道 */
+function runFFmpeg(input, track, output) {
+  return new Promise((ok, fail) => {
+    const args = ['-y', '-i', input, '-map', `0:s:${track}`, '-c:s', 'srt', output];
+    log(`  ffmpeg: ${FFMPEG} ${args.slice(0,5).join(' ')}...`);
+    const proc = spawn(FFMPEG, args);
+    let stderr = '';
+    let lastLog = Date.now();
+    proc.stderr.on('data', d => {
+      stderr += d;
+      // 每 10 秒输出一次 ffmpeg 进度
+      if (Date.now() - lastLog > 10000) {
+        const lines = stderr.split('\n').filter(l => l.includes('time=') || l.includes('frame='));
+        const last = lines[lines.length - 1] || stderr.slice(-200);
+        log(`  ffmpeg 运行中... ${last.replace(/\n/g, ' ').slice(0, 150)}`);
+        lastLog = Date.now();
+      }
+    });
+    proc.on('close', code => {
+      if (code === 0) return ok();
+      fail(new Error('ffmpeg 退出码 ' + code + ': ' + stderr.slice(-300)));
+    });
+    proc.on('error', e => fail(new Error('ffmpeg 启动失败: ' + e.message)));
   });
 }
 
@@ -932,19 +1055,23 @@ const OS_TOKEN = (() => {
   } catch { return ''; }
 })();
 
-function searchOpenSubtitles(imdbId, season, episode, query) {
+function searchOpenSubtitles(imdbId, season, episode, query, languages) {
   return new Promise((resolve) => {
     if (!OS_API_KEY) return resolve([]);
+    languages = languages || 'en';
     let path2;
     if (query) {
-      path2 = '/api/v1/subtitles?query=' + encodeURIComponent(query.toLowerCase()) + '&languages=en';
+      path2 = '/api/v1/subtitles?query=' + encodeURIComponent(query.toLowerCase()) + '&languages=' + languages;
       if (season != null) path2 += '&season_number=' + season + '&episode_number=' + (episode || 1);
     } else {
-      path2 = '/api/v1/subtitles?imdb_id=' + imdbId.replace(/^tt/, '') + '&languages=en';
+      path2 = '/api/v1/subtitles?imdb_id=' + imdbId.replace(/^tt/, '') + '&languages=' + languages;
     }
     osApiFetch(path2, resolve);
   });
 }
+const LANG_MAP = { en:'English', 'zh-CN':'中文(简)', 'zh-TW':'中文(繁)', ja:'Japanese', ko:'Korean', fr:'Français', de:'Deutsch', es:'Español', pt:'Português', ru:'Русский', it:'Italiano', ar:'العربية', th:'ไทย', vi:'Tiếng Việt', pl:'Polski', nl:'Nederlands', sv:'Svenska', da:'Dansk', fi:'Suomi', nb:'Norsk', tr:'Türkçe', ro:'Română', cs:'Čeština', el:'Ελληνικά', he:'עברית', hi:'हिन्दी', hu:'Magyar', id:'Bahasa Indonesia', ms:'Bahasa Melayu', tl:'Filipino' };
+function langName(code) { return LANG_MAP[code] || code; }
+
 function osApiFetch(path2, resolve, retries) {
   retries = retries || 0;
   if (retries > 3) { resolve([]); return; }
@@ -961,9 +1088,12 @@ function osApiFetch(path2, resolve, retries) {
       }
       try {
         const data = JSON.parse(d);
-        const subs = (data.data || []).filter(s => { const a = s.attributes || {}; return a.language === 'en' && a.files && a.files.length > 0; });
-        subs.sort((a, b) => (b.attributes.download_count || 0) - (a.attributes.download_count || 0));
-        resolve(subs.slice(0, 5).map(s => ({ id: 'os-' + s.id, file_id: s.attributes.files[0].file_id, lang: 'English', filename: s.attributes.files[0].file_name || '' })));
+        const subs = (data.data || []).filter(s => { const a = s.attributes || {}; return a.files && a.files.length > 0; });
+        // OS API 已经是按相关度排序的，不按下载量重排以免冲掉低下载量的正确结果
+        resolve(subs.slice(0, 10).map(s => {
+          const a = s.attributes || {};
+          return { id: 'os-' + s.id, file_id: a.files[0].file_id, lang: langName(a.language || '?'), langCode: a.language || '?', filename: a.files[0].file_name || '' };
+        }));
       } catch { resolve([]); }
     });
   });
@@ -995,6 +1125,24 @@ function osDownload(fileId) {
   });
 }
 
+// ====== SRT 时间轴调整 ======
+function adjustTiming(content, offsetMs) {
+  return content.replace(/(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,\.](\d{3})/g, function(m, h1, m1, s1, ms1, h2, m2, s2, ms2) {
+    var t1 = parseInt(h1)*3600000 + parseInt(m1)*60000 + parseInt(s1)*1000 + parseInt(ms1) + offsetMs;
+    var t2 = parseInt(h2)*3600000 + parseInt(m2)*60000 + parseInt(s2)*1000 + parseInt(ms2) + offsetMs;
+    if (t1 < 0) t1 = 0;
+    if (t2 < 0) t2 = 0;
+    return fmtTime(t1) + ' --> ' + fmtTime(t2);
+  });
+}
+function fmtTime(ms) {
+  var h = Math.floor(ms / 3600000);
+  var m = Math.floor((ms % 3600000) / 60000);
+  var s = Math.floor((ms % 60000) / 1000);
+  var ml = ms % 1000;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + ',' + (ml < 10 ? '00' : ml < 100 ? '0' : '') + ml;
+}
+
 // ======================== HTTP 服务器 ========================
 
 const server = http.createServer((req, res) => {
@@ -1008,7 +1156,7 @@ const server = http.createServer((req, res) => {
 
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
 
   if (req.method === 'OPTIONS') {
@@ -1109,8 +1257,9 @@ const server = http.createServer((req, res) => {
     if (pathname === '/api/search-subtitles') {
       var imdbId = (parsed.query.imdb_id || '').replace(/^tt/, '');
       var query = parsed.query.query || '';
+      var languages = parsed.query.languages || 'en';
       if (!imdbId && !query) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need imdb_id or query' })); }
-      searchOpenSubtitles('tt' + imdbId, null, null, query).then(function(subs) {
+      searchOpenSubtitles('tt' + imdbId, null, null, query, languages).then(function(subs) {
         serveJSON(res, { subtitles: subs });
       }).catch(function() { serveJSON(res, { subtitles: [] }); });
       return;
@@ -1149,24 +1298,28 @@ const server = http.createServer((req, res) => {
 
     // ---- API: 搜索已有字幕 ----
     if (pathname === '/api/search-subs') {
-      var q = (parsed.query.q || '').toLowerCase();
+      var q = (parsed.query.q || '').toLowerCase().replace(/[.\s_-]+/g, ' ').trim();
       var files = [];
       try {
         var dir = path.join(SUBS_DIR, 'TV');
         if (fs.existsSync(dir)) {
           fs.readdirSync(dir).forEach(function(f) {
-            if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt') && f.toLowerCase().includes(q)) {
-              files.push(f);
+            if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt')) {
+              var norm = f.toLowerCase().replace(/[.\s_-]+/g, ' ');
+              if (norm.includes(q)) files.push(f);
             }
           });
         }
         fs.readdirSync(SUBS_DIR).forEach(function(f) {
-          if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt') && f.toLowerCase().includes(q)) {
-            files.push(f);
+          if (f.endsWith('.srt') && !f.endsWith('.zh-en.srt')) {
+            var norm = f.toLowerCase().replace(/[.\s_-]+/g, ' ');
+            if (norm.includes(q)) files.push(f);
           }
         });
       } catch {}
       files.sort();
+      // 去重（同一文件可能出现在两个目录）
+      files = files.filter(function(f, i) { return files.indexOf(f) === i; });
       serveJSON(res, { files: files.slice(0, 50) });
       return;
     }
@@ -1189,22 +1342,95 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // ---- API: OS 字幕翻译 ----
-    if (pathname === '/api/translate-subtitle') {
-      var fileId = parseInt(parsed.query.file_id || '0', 10);
-      if (!fileId) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file_id' })); }
-      (async function() {
-        try {
-          var inFile = path.join(SUBS_DIR, 'TV', 'os_' + fileId + '.srt');
-          var outFile = path.join(SUBS_DIR, 'TV', 'os_' + fileId + '.zh-en.srt');
-          if (!fs.existsSync(inFile)) { res.writeHead(404); return res.end(JSON.stringify({ error: 'file not found' })); }
-          await translateToBilingual(inFile, outFile);
-          log('OS 翻译完成: ' + outFile);
-          serveJSON(res, { success: true, subtitleUrl: '/subs/TV/os_' + fileId + '.zh-en.srt', filename: 'os_' + fileId + '.zh-en.srt' });
-        } catch (e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
-      })();
+    // ---- API: 时间轴调整 ----
+    if (pathname === '/api/adjust-timing') {
+      var fileParam = parsed.query.file || '';
+      var offsetParam = parseInt(parsed.query.offset || '0', 10);
+      if (!fileParam) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need file (relative to SUBS_DIR)' })); }
+      if (!offsetParam) { res.writeHead(400); return res.end(JSON.stringify({ error: 'need offset (ms)' })); }
+      var filePath = path.resolve(path.join(SUBS_DIR, fileParam));
+      if (!filePath.startsWith(path.resolve(SUBS_DIR))) { res.writeHead(403); return res.end(JSON.stringify({ error: 'invalid path' })); }
+      if (!fs.existsSync(filePath)) { res.writeHead(404); return res.end(JSON.stringify({ error: 'file not found: ' + fileParam })); }
+      try {
+        var content = fs.readFileSync(filePath, 'utf-8');
+        var adjusted = adjustTiming(content, offsetParam);
+        var dir = path.dirname(fileParam);
+        var ext = path.extname(fileParam);
+        var base = path.basename(fileParam, ext);
+        var offsetStr = (offsetParam >= 0 ? '+' : '') + (offsetParam / 1000).toString().replace('.', '_');
+        var newName = base + '_offset' + offsetStr + 's' + ext;
+        var newRelPath = dir ? dir + '/' + newName : newName;
+        var newFilePath = path.join(SUBS_DIR, newRelPath);
+        fs.writeFileSync(newFilePath, adjusted);
+        log('时间轴偏移: ' + fileParam + ' offset=' + offsetParam + 'ms → ' + newName);
+        var encodedPath = newRelPath.split('/').map(function(s) { return encodeURIComponent(s); }).join('/');
+        serveJSON(res, { success: true, subtitleUrl: '/subs/' + encodedPath, filename: newName });
+      } catch (e) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: e.message }));
+      }
       return;
     }
+
+
+    // ---- API: 上传调时间轴 ----
+    if (pathname === '/api/upload-adjust' && req.method === 'POST') {
+      var body = '';
+      req.on('data', function(c) { body += c; });
+      req.on('end', function() {
+        try {
+          var data = JSON.parse(body);
+          var content = data.content || '';
+          var filename = data.filename || 'uploaded.srt';
+          var offset = parseInt(data.offset || '0', 10);
+          if (!content) { return serveJSON(res, { error: 'need content' }); }
+          if (!offset) { return serveJSON(res, { error: 'need offset (ms)' }); }
+          var adjusted = adjustTiming(content, offset);
+          var ext = path.extname(filename) || '.srt';
+          var base = path.basename(filename, ext);
+          var offsetStr = (offset >= 0 ? '+' : '') + (offset / 1000).toString().replace('.', '_');
+          var newName = base + '_offset' + offsetStr + 's' + ext;
+          var outDir = path.join(SUBS_DIR, 'TV');
+          if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+          var outFile = path.join(outDir, newName);
+          fs.writeFileSync(outFile, adjusted);
+          log('上传调时间轴: ' + filename + ' offset=' + offset + 'ms ' + newName);
+          serveJSON(res, { success: true, subtitleUrl: '/subs/TV/' + encodeURIComponent(newName), filename: newName });
+        } catch (e) { serveJSON(res, { error: e.message }); }
+      });
+      return;
+    }
+
+    // ---- API: 上传翻译 ----
+    if (pathname === '/api/upload-translate' && req.method === 'POST') {
+      var body = '';
+      req.on('data', function(c) { body += c; });
+      req.on('end', function() {
+        try {
+          var data = JSON.parse(body);
+          var content = data.content || '';
+          var filename = data.filename || 'uploaded.srt';
+          if (!content) { return serveJSON(res, { error: 'need content' }); }
+          // Save to temp file for translation
+          var ext = path.extname(filename) || '.srt';
+          var base = path.basename(filename, ext);
+          var inFile = path.join(SUBS_DIR, 'TV', '_upload_' + base + ext);
+          fs.writeFileSync(inFile, content);
+          log('上传翻译: ' + filename + ' -> ' + inFile);
+          var outFile = path.join(SUBS_DIR, 'TV', base + '.zh-en.srt');
+          translateToBilingual(inFile, outFile).then(function() {
+            try { fs.unlinkSync(inFile); } catch {}
+            log('上传翻译完成: ' + outFile);
+            serveJSON(res, { success: true, subtitleUrl: '/subs/TV/' + encodeURIComponent(base + '.zh-en.srt'), filename: base + '.zh-en.srt' });
+          }).catch(function(e) {
+            try { fs.unlinkSync(inFile); } catch {}
+            serveJSON(res, { error: e.message });
+          });
+        } catch (e) { serveJSON(res, { error: e.message }); }
+      });
+      return;
+    }
+
 
     // ---- API: 探测视频字幕轨道 ----
     if (pathname === '/api/probe') {
@@ -1230,10 +1456,20 @@ const server = http.createServer((req, res) => {
       (async () => {
         const timeout = setTimeout(() => {
           try { res.writeHead(504); res.end(JSON.stringify({ error: '处理超时' })); } catch {}
-        }, 300000);
+        }, 1800000);
         try {
           log(`提取字幕: track=${trackIdx} url=${videoUrl.slice(0, 80)}...`);
-          const srtFile = await extractSubtitleTrack(videoUrl, trackIdx);
+          // ffmpeg 用 `-map 0:s:N`（N = 字幕列表序号）, mkvextract 用实际流序号
+          // 重新探测拿到 MKV 轨道号
+          let mkvTrackId = trackIdx;
+          try {
+            const probeTracks = await probeSubtitleTracks(videoUrl);
+            if (probeTracks[trackIdx] && probeTracks[trackIdx].index != null) {
+              mkvTrackId = probeTracks[trackIdx].index;
+              log(`  → 字幕列表第${trackIdx}个 → MKV 轨道号 ${mkvTrackId}`);
+            }
+          } catch {}
+          const srtFile = await extractSubtitleTrack(videoUrl, trackIdx, mkvTrackId);
           log(`提取完成: ${srtFile} (${fs.statSync(srtFile).size} bytes)`);
 
           const videoName = decodeURIComponent(videoUrl.split('/').pop() || 'video').replace(/\.[^/.]+$/, '');
